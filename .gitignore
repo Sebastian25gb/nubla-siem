@@ -1,0 +1,29 @@
+# Ignorar archivos generados por Docker
+*.log
+*.pid
+
+# Ignorar volúmenes de Docker
+volumes/
+
+# Ignorar dependencias de Node.js
+node_modules/
+npm-debug.log
+
+# Ignorar dependencias de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+*.env
+
+# Ignorar archivos generados por el sistema
+.DS_Store
+Thumbs.db
+
+# Ignorar archivos de build
+dist/
+build/
+*.egg-info/
