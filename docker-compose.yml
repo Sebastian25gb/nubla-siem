@@ -1,11 +1,12 @@
-version: '3.8'
-
 services:
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.3.0
+    image: zookeeper:3.8.0
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+      ZOO_MY_ID: 1
+      ZOO_PORT: 2181
+      ZOO_4LW_COMMANDS_WHITELIST: stat,ruok,mntr
+    ports:
+      - "127.0.0.1:2181:2181"
     deploy:
       resources:
         limits:
@@ -23,12 +24,49 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "127.0.0.1:9092:9092"
     deploy:
       resources:
         limits:
           memory: "1g"
         reservations:
           memory: "512m"
+    restart: unless-stopped
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.15.0
+    volumes:
+      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+      - ./logs:/logs
+      - ./logstash.yml:/usr/share/logstash/config/logstash.yml
+    depends_on:
+      - kafka
+      - elasticsearch
+    deploy:
+      resources:
+        limits:
+          memory: "512m"
+        reservations:
+          memory: "256m"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      - elasticsearch
+      - postgres
+      - redis
+    deploy:
+      resources:
+        limits:
+          memory: "512m"
+        reservations:
+          memory: "256m"
     restart: unless-stopped
 
   elasticsearch:
@@ -61,6 +99,7 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
     deploy:
       resources:
         limits:
