@@ -12,8 +12,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth, prefix="/token")  # Usar directamente 'auth'
-app.include_router(logs, prefix="/logs")   # Usar directamente 'logs'
+app.include_router(auth, prefix="/token")
+app.include_router(logs, prefix="/logs")
 
 @app.get("/")
 async def root():

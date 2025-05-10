@@ -1,33 +1,47 @@
-from elasticsearch import Elasticsearch
-from core.config import settings
+from elasticsearch import Elasticsearch, NotFoundError
+import os
 import time
-from elasticsearch.exceptions import ConnectionError
 
-# Intentar conectar a Elasticsearch con más reintentos
-for attempt in range(15):  # Aumentar a 15 intentos
-    try:
-        es = Elasticsearch(
-            [f"http://{settings.ELASTICSEARCH_HOST}:{settings.ELASTICSEARCH_PORT}"],
-            basic_auth=(settings.ELASTICSEARCH_USER, settings.ELASTICSEARCH_PASSWORD)
-        )
-        es.info()  # Probar la conexión
-        break
-    except ConnectionError as e:
-        print(f"Failed to connect to Elasticsearch, attempt {attempt + 1}/15: {e}")
-        if attempt < 14:
-            time.sleep(10)  # Mantener 10 segundos de espera
-        else:
-            raise e
+ELASTICSEARCH_HOST = os.getenv("ELASTICSEARCH_HOST", "localhost")
+es = Elasticsearch([f"http://{ELASTICSEARCH_HOST}:9200"])
+
+def wait_for_elasticsearch():
+    retries = 15
+    for i in range(retries):
+        try:
+            if es.ping():
+                health = es.cluster.health(wait_for_status="green", timeout="30s")
+                if health["status"] in ["green", "yellow"]:
+                    print("Elasticsearch is ready with status:", health["status"])
+                    return True
+        except Exception as e:
+            print(f"Failed to connect to Elasticsearch, attempt {i+1}/{retries}: {str(e)}")
+        time.sleep(5)
+    raise Exception("Could not connect to Elasticsearch after multiple attempts")
+
+wait_for_elasticsearch()
 
 def get_logs(tenant_id: str):
-    query = {
-        "query": {
-            "bool": {
-                "filter": [
-                    {"term": {"tenant_id": tenant_id}}
-                ]
-            }
-        }
-    }
-    response = es.search(index=f"logs-{tenant_id}", body=query, size=1000)
-    return [hit["_source"] for hit in response["hits"]["hits"]]
+    try:
+        # Verificar si el índice existe
+        index_name = f"logs-{tenant_id}"
+        if not es.indices.exists(index=index_name):
+            print(f"Index {index_name} does not exist. Returning empty list.")
+            return []
+
+        # Realizar la búsqueda
+        result = es.search(
+            index=index_name,
+            body={"query": {"match_all": {}}},
+            size=1000
+        )
+        hits = result["hits"]["hits"]
+        logs = [hit["_source"] for hit in hits]
+        print(f"Retrieved {len(logs)} logs from index {index_name}")
+        return logs
+    except NotFoundError as e:
+        print(f"Index {index_name} not found: {str(e)}")
+        return []
+    except Exception as e:
+        print(f"Error fetching logs from Elasticsearch: {str(e)}")
+        raise Exception(f"Error fetching logs from Elasticsearch: {str(e)}")
