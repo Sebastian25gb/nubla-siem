@@ -1,26 +1,35 @@
 import React, { useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
-import { Container, Typography, Button } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { Container, Typography, Button } from '@mui/material';
 
 const DashboardPage = () => {
   const { logout } = useContext(AuthContext);
   const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  const handleViewLogs = () => {
+    navigate('/logs');
+  };
 
   return (
     <Container>
       <Typography variant="h4" gutterBottom>
         Nubla SIEM Dashboard
       </Typography>
-      <Button variant="contained" color="primary" onClick={() => navigate('/logs')}>
+      <Button
+        variant="contained"
+        color="primary"
+        onClick={handleViewLogs}
+        style={{ marginRight: '10px' }}
+      >
         View Logs
       </Button>
-      <Button
-        variant="outlined"
-        color="secondary"
-        onClick={logout}
-        style={{ marginLeft: '10px' }}
-      >
+      <Button variant="contained" color="secondary" onClick={handleLogout}>
         Logout
       </Button>
     </Container>

@@ -10,6 +10,16 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import LogsPage from './pages/LogsPage';
 
+// Suprimir advertencias de React Router en desarrollo
+if (process.env.NODE_ENV === 'development') {
+  console.warn = (message, ...args) => {
+    if (message.includes('React Router Future Flag Warning')) {
+      return;
+    }
+    console._warn(message, ...args);
+  };
+}
+
 const ProtectedRoute = ({ children }) => {
   const { token } = React.useContext(AuthContext);
   return token ? children : <Navigate to="/login" />;

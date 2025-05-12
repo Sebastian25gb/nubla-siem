@@ -1,20 +1,18 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routes import logs, auth
+from api.routes import auth, logs
 
 app = FastAPI()
 
+# Configurar CORS para permitir solicitudes desde el frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(auth, prefix="/token")
-app.include_router(logs, prefix="/logs")
-
-@app.get("/")
-async def root():
-    return {"message": "Welcome to Nubla SIEM API"}
+# Incluir rutas
+app.include_router(auth.router, prefix="/token")
+app.include_router(logs.router, prefix="/logs")

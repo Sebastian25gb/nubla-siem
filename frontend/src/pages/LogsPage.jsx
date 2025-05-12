@@ -26,7 +26,7 @@ import {
 const LogsPage = () => {
   const [logs, setLogs] = useState([]);
   const [tenantId, setTenantId] = useState('acmecorp');
-  const [errorMessage, setErrorMessage] = useState(''); // Nuevo estado para el mensaje de error
+  const [errorMessage, setErrorMessage] = useState('');
   const { token, logout } = useContext(AuthContext);
   const navigate = useNavigate();
 
@@ -41,25 +41,22 @@ const LogsPage = () => {
       );
       console.log("Response from /logs/:", response.data);
       setLogs(response.data);
-      setErrorMessage(''); // Limpiar el mensaje de error si la solicitud es exitosa
+      setErrorMessage('');
     } catch (err) {
       console.error('Error fetching logs:', err);
       if (err.response && err.response.status === 401) {
-        // Token expirado o no autorizado
         setErrorMessage('Por temas de seguridad se ha cerrado la sesión, por favor ingrese de nuevo');
         logout();
         setTimeout(() => {
           navigate('/login');
-        }, 2000); // Redirigir después de 2 segundos para que el usuario vea el mensaje
+        }, 2000);
       } else if (err.code === 'ERR_NETWORK' || err.message.includes('Network Error')) {
-        // Error de red (backend no disponible)
         setErrorMessage('Error de conexión con el servidor. Por favor, intenta de nuevo más tarde.');
         logout();
         setTimeout(() => {
           navigate('/login');
         }, 2000);
       } else {
-        // Otros errores
         setErrorMessage('Error al obtener los logs. Por favor, intenta de nuevo.');
       }
     }
