@@ -16,8 +16,10 @@ class Log(BaseModel):
     tenant_id: str
 
 @router.get("/", response_model=List[Log])
-async def read_logs(tenant_id: str, current_user: str = Depends(get_current_user)):
+async def read_logs(current_user: dict = Depends(get_current_user)):
     try:
+        # Usamos el nombre del tenant desde el token
+        tenant_id = current_user["tenant"]
         logs = get_logs(tenant_id)
         return logs
     except Exception as e:

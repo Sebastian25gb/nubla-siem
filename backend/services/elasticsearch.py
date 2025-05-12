@@ -3,7 +3,10 @@ import os
 import time
 
 ELASTICSEARCH_HOST = os.getenv("ELASTICSEARCH_HOST", "localhost")
-es = Elasticsearch([f"http://{ELASTICSEARCH_HOST}:9200"])
+es = Elasticsearch(
+    [f"http://{ELASTICSEARCH_HOST}:9200"],
+    basic_auth=("elastic", "yourpassword")
+)
 
 def wait_for_elasticsearch():
     retries = 15
@@ -24,7 +27,7 @@ wait_for_elasticsearch()
 def get_logs(tenant_id: str):
     try:
         # Verificar si el índice existe
-        index_name = f"logs-{tenant_id}"
+        index_name = f"nubla-logs-{tenant_id}" # Cambiado a nubla-logs-*
         if not es.indices.exists(index=index_name):
             print(f"Index {index_name} does not exist. Returning empty list.")
             return []

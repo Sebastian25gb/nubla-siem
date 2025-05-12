@@ -16,13 +16,14 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Conexión a PostgreSQL
+# Conexión a PostgreSQL con SSL
 def get_db_connection():
     return psycopg2.connect(
         dbname="nubla_db",
         user="nubla_user",
         password="secure_password_123",
-        host="postgres"
+        host="postgres",
+        sslmode="prefer"
     )
 
 def verify_password(plain_password, hashed_password):
@@ -43,7 +44,13 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT password_hash, tenant_id FROM users WHERE username = %s", (form_data.username,))
+            # Obtener el usuario y el nombre del tenant
+            cur.execute("""
+                SELECT u.password_hash, u.role, t.name AS tenant_name
+                FROM users u
+                JOIN tenants t ON u.tenant_id = t.id
+                WHERE u.username = %s
+            """, (form_data.username,))
             user = cur.fetchone()
             if not user or not verify_password(form_data.password, user[0]):
                 raise HTTPException(
@@ -51,9 +58,11 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
                     detail="Incorrect username or password",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+            # Guardar el nombre del tenant y el rol en el token
             access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
             access_token = create_access_token(
-                data={"sub": form_data.username}, expires_delta=access_token_expires
+                data={"sub": form_data.username, "tenant": user[2], "role": user[1]},
+                expires_delta=access_token_expires
             )
             return {"access_token": access_token, "token_type": "bearer"}
     finally:

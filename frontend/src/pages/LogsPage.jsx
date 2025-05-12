@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Container,
   Typography,
-  TextField,
   Button,
   Table,
   TableBody,
@@ -25,7 +24,6 @@ import {
 
 const LogsPage = () => {
   const [logs, setLogs] = useState([]);
-  const [tenantId, setTenantId] = useState('acmecorp');
   const [errorMessage, setErrorMessage] = useState('');
   const { token, logout } = useContext(AuthContext);
   const navigate = useNavigate();
@@ -34,7 +32,7 @@ const LogsPage = () => {
     try {
       console.log("Token being sent:", token);
       const response = await axios.get(
-        `http://127.0.0.1:8000/logs/?tenant_id=${tenantId}`,
+        `http://127.0.0.1:8000/logs/`, // Eliminamos el parámetro tenant_id
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -60,7 +58,7 @@ const LogsPage = () => {
         setErrorMessage('Error al obtener los logs. Por favor, intenta de nuevo.');
       }
     }
-  }, [tenantId, token, logout, navigate]);
+  }, [token, logout, navigate]);
 
   useEffect(() => {
     fetchLogs();
@@ -74,19 +72,13 @@ const LogsPage = () => {
   return (
     <Container>
       <Typography variant="h4" gutterBottom>
-        Logs for Tenant: {tenantId}
+        Logs for Tenant
       </Typography>
       {errorMessage && (
         <Typography color="error" gutterBottom>
           {errorMessage}
         </Typography>
       )}
-      <TextField
-        label="Tenant ID"
-        value={tenantId}
-        onChange={(e) => setTenantId(e.target.value)}
-        margin="normal"
-      />
       <Button
         variant="contained"
         onClick={fetchLogs}

@@ -18,10 +18,12 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         print(f"Token payload: {payload}")
         username: str = payload.get("sub")
-        if username is None:
-            print("No username in token payload")
+        tenant: str = payload.get("tenant")
+        role: str = payload.get("role")
+        if username is None or tenant is None or role is None:
+            print("Missing username, tenant, or role in token payload")
             raise credentials_exception
-        return username
+        return {"username": username, "tenant": tenant, "role": role}
     except JWTError as e:
         print(f"JWTError: {str(e)}")
         raise credentials_exception

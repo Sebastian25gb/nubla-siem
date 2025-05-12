@@ -55,6 +55,8 @@ services:
       - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf
       - ./logs:/logs
       - ./logstash.yml:/usr/share/logstash/config/logstash.yml
+    ports:
+    - "127.0.0.1:5044:5044" # Aseguramos que sea una lista
     depends_on:
       kafka:
         condition: service_healthy
@@ -111,14 +113,16 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=true
+      - xpack.security.authc.api_key.enabled=true
+      - "ELASTIC_PASSWORD=yourpassword"
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
     ports:
       - "127.0.0.1:9200:9200"
     volumes:
       - esdata:/usr/share/elasticsearch/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep '\"status\":\"green\"'"]
+      test: ["CMD-SHELL", "curl -s -u elastic:yourpassword http://localhost:9200/_cluster/health | grep '\"status\":\"green\"'"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -126,9 +130,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: "1g"
+          memory: "4g"
         reservations:
-          memory: "512m"
+          memory: "2g"
     restart: unless-stopped
 
   postgres:
@@ -142,6 +146,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - ./postgres-ssl:/etc/postgresql/ssl # Montamos los certificados SSL
+    command: ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/etc/postgresql/ssl/server.crt", "-c", "ssl_key_file=/etc/postgresql/ssl/server.key"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nubla_user -d nubla_db"]
       interval: 10s
@@ -151,9 +157,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: "1g"
+          memory: "2g"
         reservations:
-          memory: "512m"
+          memory: "1g"
     restart: unless-stopped
 
   redis:

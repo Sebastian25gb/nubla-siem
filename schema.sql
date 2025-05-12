@@ -10,9 +10,11 @@ CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
+    email VARCHAR(255),
     role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'user', 'analyst')), -- Roles definidos
-    tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE, -- Eliminamos la duplicación
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tabla de dispositivos
@@ -39,50 +41,50 @@ INSERT INTO tenants (name) VALUES
 ('personal');
 
 -- Insertar usuarios (3 usuarios por tenant: 1 admin, 2 users)
--- Usa el hash generado para "yourpassword" en lugar de $2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i
+-- Usa el hash generado para "yourpassword"
 INSERT INTO users (username, password_hash, role, tenant_id) VALUES 
 -- AcmeCorp (tenant_id: 1)
-('admin@acmecorp', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'admin', 1),
-('user1@acmecorp', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 1),
-('user2@acmecorp', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 1),
+('admin@acmecorp', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'admin', 1),
+('user1@acmecorp', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 1),
+('user2@acmecorp', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 1),
 -- TechInnovate (tenant_id: 2)
-('admin@techinnovate', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'admin', 2),
-('user1@techinnovate', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 2),
-('user2@techinnovate', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 2),
+('admin@techinnovate', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'admin', 2),
+('user1@techinnovate', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 2),
+('user2@techinnovate', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 2),
 -- GlobalTrade (tenant_id: 3)
-('admin@globaltrade', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'admin', 3),
-('user1@globaltrade', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 3),
-('user2@globaltrade', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 3),
+('admin@globaltrade', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'admin', 3),
+('user1@globaltrade', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 3),
+('user2@globaltrade', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 3),
 -- HealthSolutions (tenant_id: 4)
-('admin@healthsolutions', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'admin', 4),
-('user1@healthsolutions', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 4),
-('user2@healthsolutions', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 4),
+('admin@healthsolutions', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'admin', 4),
+('user1@healthsolutions', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 4),
+('user2@healthsolutions', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 4),
 -- EduPlatform (tenant_id: 5)
-('admin@eduplatform', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'admin', 5),
-('user1@eduplatform', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 5),
-('user2@eduplatform', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 5),
+('admin@eduplatform', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'admin', 5),
+('user1@eduplatform', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 5),
+('user2@eduplatform', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 5),
 -- RetailChain (tenant_id: 6)
-('admin@retailchain', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'admin', 6),
-('user1@retailchain', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 6),
-('user2@retailchain', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 6),
+('admin@retailchain', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'admin', 6),
+('user1@retailchain', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 6),
+('user2@retailchain', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 6),
 -- FinSecure (tenant_id: 7)
-('admin@finsecure', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'admin', 7),
-('user1@finsecure', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 7),
-('user2@finsecure', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 7),
+('admin@finsecure', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'admin', 7),
+('user1@finsecure', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 7),
+('user2@finsecure', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 7),
 -- LogiFreight (tenant_id: 8)
-('admin@logifreight', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'admin', 8),
-('user1@logifreight', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 8),
-('user2@logifreight', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 8),
+('admin@logifreight', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'admin', 8),
+('user1@logifreight', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 8),
+('user2@logifreight', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 8),
 -- MediaStream (tenant_id: 9)
-('admin@mediastream', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'admin', 9),
-('user1@mediastream', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 9),
-('user2@mediastream', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 9),
+('admin@mediastream', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'admin', 9),
+('user1@mediastream', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 9),
+('user2@mediastream', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 9),
 -- EnergyWorks (tenant_id: 10)
-('admin@energyworks', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'admin', 10),
-('user1@energyworks', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 10),
-('user2@energyworks', '$2b$12$DRe/aIoS4dLMETqWCCuCDuP7X0rcJdnMpjeb1wVQobCzOZnHlps6i', 'user', 10),
+('admin@energyworks', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'admin', 10),
+('user1@energyworks', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 10),
+('user2@energyworks', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'user', 10),
 -- Personal (tenant_id: 11)
-('personal@sebastian', '$2b$12$W8.XeG8z8e5pJ5nqZ4vQ8u9kW5zQ8v5W5zQ8v5W5zQ8v5W5zQ8v5W', 'admin', 11);
+('personal@sebastian', '$2b$12$h6B/ea7gZJd0ekCy8Q08PuVaCq7qvnq5ykS1sfghgYt55eEC7v0Z6', 'admin', 11);
 
 -- Insertar dispositivos (5 dispositivos por tenant)
 INSERT INTO devices (device_id, device_type, tenant_id) VALUES 
