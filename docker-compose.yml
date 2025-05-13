@@ -56,7 +56,7 @@ services:
       - ./logs:/logs
       - ./logstash.yml:/usr/share/logstash/config/logstash.yml
     ports:
-    - "127.0.0.1:5044:443" # Aseguramos que sea una lista
+    - "443:443" # Aseguramos que sea una lista
     depends_on:
       kafka:
         condition: service_healthy
@@ -65,9 +65,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: "512m"
+          memory: "1g"
         reservations:
-          memory: "256m"
+          memory: "512m"
     restart: unless-stopped
 
   backend:

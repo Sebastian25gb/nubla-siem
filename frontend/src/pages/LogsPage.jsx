@@ -25,20 +25,41 @@ import {
 const LogsPage = () => {
   const [logs, setLogs] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
+  const [lastTimestamp, setLastTimestamp] = useState(null); // Para paginación
   const { token, logout } = useContext(AuthContext);
   const navigate = useNavigate();
 
-  const fetchLogs = useCallback(async () => {
+  const fetchLogs = useCallback(async (loadMore = false) => {
     try {
       console.log("Token being sent:", token);
       const response = await axios.get(
-        `http://127.0.0.1:8000/logs/`, // Eliminamos el parámetro tenant_id
+        `http://127.0.0.1:8000/logs/`,
         {
           headers: { Authorization: `Bearer ${token}` },
+          params: loadMore && lastTimestamp ? { before: lastTimestamp } : {},
         }
       );
       console.log("Response from /logs/:", response.data);
-      setLogs(response.data);
+
+      if (loadMore) {
+        // Acumular logs (evitar duplicados basados en timestamp)
+        setLogs((prevLogs) => {
+          const newLogs = response.data.filter(
+            (newLog) => !prevLogs.some((log) => log.timestamp === newLog.timestamp)
+          );
+          const updatedLogs = [...prevLogs, ...newLogs];
+          return updatedLogs;
+        });
+      } else {
+        // Reemplazar logs (primer carga o refrescar)
+        setLogs(response.data);
+      }
+
+      // Actualizar el último timestamp para la siguiente paginación
+      if (response.data.length > 0) {
+        setLastTimestamp(response.data[response.data.length - 1].timestamp);
+      }
+
       setErrorMessage('');
     } catch (err) {
       console.error('Error fetching logs:', err);
@@ -58,16 +79,29 @@ const LogsPage = () => {
         setErrorMessage('Error al obtener los logs. Por favor, intenta de nuevo.');
       }
     }
-  }, [token, logout, navigate]);
+  }, [token, logout, navigate, lastTimestamp]);
 
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
 
-  const chartData = logs.map((log) => ({
-    timestamp: new Date(log.timestamp).toLocaleTimeString(),
-    status: log.status === 'success' ? 1 : log.status === 'failure' ? -1 : 0,
-  }));
+  const chartData = logs.map((log) => {
+    let statusValue;
+    if (log.status === 'información') {
+      statusValue = 1;
+    } else if (log.status && log.status.toLowerCase().includes('error')) {
+      statusValue = -1;
+    } else if (log.status && log.status.toLowerCase().includes('warning')) {
+      statusValue = 0;
+    } else {
+      statusValue = 0;
+    }
+
+    return {
+      timestamp: new Date(log.timestamp).toLocaleTimeString(),
+      status: statusValue,
+    };
+  });
 
   return (
     <Container>
@@ -81,10 +115,18 @@ const LogsPage = () => {
       )}
       <Button
         variant="contained"
-        onClick={fetchLogs}
+        onClick={() => fetchLogs(false)} // Refrescar logs
         style={{ marginLeft: '10px' }}
       >
         Fetch Logs
+      </Button>
+      <Button
+        variant="contained"
+        onClick={() => fetchLogs(true)} // Cargar más logs
+        style={{ marginLeft: '10px' }}
+        disabled={!lastTimestamp} // Deshabilitar si no hay más logs para cargar
+      >
+        Load More
       </Button>
       <LineChart
         width={600}
@@ -94,7 +136,7 @@ const LogsPage = () => {
       >
         <CartesianGrid strokeDasharray="3 3" />
         <XAxis dataKey="timestamp" />
-        <YAxis />
+        <YAxis domain={[-1, 1]} ticks={[-1, 0, 1]} />
         <Tooltip />
         <Legend />
         <Line type="monotone" dataKey="status" stroke="#8884d8" />

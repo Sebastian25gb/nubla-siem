@@ -2,10 +2,11 @@ fastapi==0.115.0
 uvicorn==0.30.6
 psycopg2-binary==2.9.9
 passlib[bcrypt]==1.7.4
-bcrypt==4.2.0
+bcrypt==4.1.3
 python-jose[cryptography]==3.3.0
 python-dotenv==1.0.1
 elasticsearch==8.15.0
 redis==5.0.8
 aiokafka==0.10.0
 python-multipart==0.0.9 # Añadimos esta línea
+aiohttp==3.10.5
