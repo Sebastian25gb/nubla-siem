@@ -52,22 +52,30 @@ services:
   logstash:
     image: docker.elastic.co/logstash/logstash:8.15.0
     volumes:
-      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf
-      - ./logs:/logs
-      - ./logstash.yml:/usr/share/logstash/config/logstash.yml
+      - ./logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
     ports:
-    - "443:443" # Aseguramos que sea una lista
+      - "127.0.0.1:443:443"
+      - "9600:9600"
     depends_on:
-      kafka:
-        condition: service_healthy
       elasticsearch:
         condition: service_healthy
+    environment:
+      - "XPACK_MONITORING_ENABLED=false"
+      - "ELASTICSEARCH_HOSTS=http://elasticsearch:9200"
+      - "ELASTICSEARCH_USERNAME=elastic"
+      - "ELASTICSEARCH_PASSWORD=yourpassword"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9600/_node/stats | grep -q '\"status\": \"green\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
-          memory: "1g"
+          memory: "2g"
         reservations:
-          memory: "512m"
+          memory: "1g"
     restart: unless-stopped
 
   backend:
