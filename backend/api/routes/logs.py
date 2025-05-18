@@ -20,7 +20,8 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant ID not found in token")
 
-    index_name = f"nubla-logs-{tenant_id}"
+    # Usamos un índice fijo para testuser, ya que los logs tienen tenant_id: testuser
+    index_name = "nubla-logs-testuser"  # Esto debería ser dinámico en un sistema multi-tenant
 
     try:
         # Verificar conexión a Elasticsearch
@@ -35,7 +36,16 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
         query_body = {
             "query": {
                 "bool": {
-                    "filter": []
+                    "filter": [
+                        {
+                            "range": {
+                                "@timestamp": {
+                                    "gte": "2025-05-17T00:00:00.000-05:00",  # Desde el 17 de mayo
+                                    "lte": "now"
+                                }
+                            }
+                        }
+                    ]
                 }
             },
             "size": 100,

@@ -25,7 +25,7 @@ import {
 const LogsPage = () => {
   const [logs, setLogs] = useState([]);
   const [errorMessage, setErrorMessage] = useState('');
-  const [lastTimestamp, setLastTimestamp] = useState(null); // Para paginación
+  const [lastTimestamp, setLastTimestamp] = useState(null);
   const { token, logout } = useContext(AuthContext);
   const navigate = useNavigate();
 
@@ -33,7 +33,7 @@ const LogsPage = () => {
     try {
       console.log("Token being sent:", token);
       const response = await axios.get(
-        `http://127.0.0.1:8000/logs/`,
+        `http://107.152.39.90:8000/logs/`,  // Cambia la URL
         {
           headers: { Authorization: `Bearer ${token}` },
           params: loadMore && lastTimestamp ? { before: lastTimestamp } : {},
@@ -42,7 +42,6 @@ const LogsPage = () => {
       console.log("Response from /logs/:", response.data);
 
       if (loadMore) {
-        // Acumular logs (evitar duplicados basados en timestamp)
         setLogs((prevLogs) => {
           const newLogs = response.data.filter(
             (newLog) => !prevLogs.some((log) => log.timestamp === newLog.timestamp)
@@ -51,11 +50,9 @@ const LogsPage = () => {
           return updatedLogs;
         });
       } else {
-        // Reemplazar logs (primer carga o refrescar)
         setLogs(response.data);
       }
 
-      // Actualizar el último timestamp para la siguiente paginación
       if (response.data.length > 0) {
         setLastTimestamp(response.data[response.data.length - 1].timestamp);
       }
@@ -115,16 +112,16 @@ const LogsPage = () => {
       )}
       <Button
         variant="contained"
-        onClick={() => fetchLogs(false)} // Refrescar logs
+        onClick={() => fetchLogs(false)}
         style={{ marginLeft: '10px' }}
       >
         Fetch Logs
       </Button>
       <Button
         variant="contained"
-        onClick={() => fetchLogs(true)} // Cargar más logs
+        onClick={() => fetchLogs(true)}
         style={{ marginLeft: '10px' }}
-        disabled={!lastTimestamp} // Deshabilitar si no hay más logs para cargar
+        disabled={!lastTimestamp}
       >
         Load More
       </Button>
