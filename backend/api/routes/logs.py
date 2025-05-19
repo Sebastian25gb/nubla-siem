@@ -3,6 +3,7 @@ from elasticsearch import AsyncElasticsearch, RequestError, ConnectionError
 from elasticsearch.exceptions import NotFoundError
 from .auth import get_current_user
 from models.logs import Log
+from datetime import datetime
 
 router = APIRouter()
 
@@ -14,14 +15,25 @@ es = AsyncElasticsearch(
     retry_on_timeout=True
 )
 
-@router.get("/", response_model=list[Log])
+# Modelo Log ajustado para incluir nuevos campos
+class Log:
+    def __init__(self, timestamp, device, user_id, action, status, network, source):
+        self.timestamp = timestamp
+        self.device = device
+        self.user_id = user_id
+        self.action = action
+        self.status = status
+        self.network = network
+        self.source = source
+
+@router.get("/")
 async def fetch_logs(before: str = None, current_user: dict = Depends(get_current_user)):
     tenant_id = current_user.get("tenant")
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant ID not found in token")
 
-    # Usamos un índice fijo para testuser, ya que los logs tienen tenant_id: testuser
-    index_name = "nubla-logs-testuser"  # Esto debería ser dinámico en un sistema multi-tenant
+    # Usamos un índice fijo para testuser
+    index_name = "nubla-logs-testuser"
 
     try:
         # Verificar conexión a Elasticsearch
@@ -40,7 +52,7 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
                         {
                             "range": {
                                 "@timestamp": {
-                                    "gte": "2025-05-17T00:00:00.000-05:00",  # Desde el 17 de mayo
+                                    "gte": "2025-05-17T00:00:00.000-05:00",
                                     "lte": "now"
                                 }
                             }
@@ -52,7 +64,6 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
             "sort": [{"@timestamp": {"order": "desc"}}]
         }
 
-        # Si se proporciona un parámetro 'before', filtrar logs anteriores a ese timestamp
         if before:
             query_body["query"]["bool"]["filter"].append({
                 "range": {
@@ -68,18 +79,47 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
             body=query_body
         )
 
-        # Transformar los logs al formato esperado por el modelo Log
+        # Transformar los logs al formato deseado
         logs = []
         for hit in response["hits"]["hits"]:
             source = hit["_source"]
-            log_entry = Log(
-                timestamp=source.get("@timestamp", ""),
-                device_id=source.get("host", {}).get("id", None),
-                user_id=source.get("winlog", {}).get("user", {}).get("identifier", None),
-                action=source.get("event", {}).get("action", None) if source.get("event", {}).get("action") != "None" else source.get("event", {}).get("code", None),
-                status=source.get("log", {}).get("level", None),
-                source=source.get("event", {}).get("provider", source.get("host", {}).get("hostname", None)),
-            )
+            
+            # Formatear el timestamp
+            timestamp_str = source.get("@timestamp", "")
+            try:
+                timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S.%fZ")
+                formatted_timestamp = timestamp.strftime("%d/%m/%y %H:%M:%S")
+            except ValueError:
+                formatted_timestamp = timestamp_str
+
+            # Determinar la acción (conexión/desconexión)
+            event_code = source.get("event", {}).get("code", "")
+            message = source.get("message", "")
+            if event_code == "11005" and "seguridad inalámbrica" in message:
+                action = "Wi-Fi Connected"
+            elif event_code == "11004" and "seguridad inalámbrica" in message:
+                action = "Wi-Fi Disconnected"
+            else:
+                action = source.get("event", {}).get("action", event_code)
+
+            # Mapear el estado
+            status = source.get("log", {}).get("level", "")
+            if status == "información":
+                status = "Success"
+            elif "error" in status.lower():
+                status = "Error"
+            elif "warning" in status.lower():
+                status = "Warning"
+
+            log_entry = {
+                "timestamp": formatted_timestamp,
+                "device": source.get("winlog", {}).get("event_data", {}).get("Adapter", source.get("host", {}).get("name", "")),
+                "user_id": source.get("winlog", {}).get("user", {}).get("identifier", ""),
+                "action": action,
+                "status": status,
+                "network": source.get("winlog", {}).get("event_data", {}).get("SSID", ""),
+                "source": source.get("event", {}).get("provider", source.get("host", {}).get("hostname", ""))
+            }
             logs.append(log_entry)
 
         return logs

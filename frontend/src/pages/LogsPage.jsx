@@ -33,7 +33,7 @@ const LogsPage = () => {
     try {
       console.log("Token being sent:", token);
       const response = await axios.get(
-        `http://107.152.39.90:8000/logs/`,  // Cambia la URL
+        `http://107.152.39.90:8000/logs/`,
         {
           headers: { Authorization: `Bearer ${token}` },
           params: loadMore && lastTimestamp ? { before: lastTimestamp } : {},
@@ -84,18 +84,18 @@ const LogsPage = () => {
 
   const chartData = logs.map((log) => {
     let statusValue;
-    if (log.status === 'información') {
+    if (log.status === 'Success') {
       statusValue = 1;
-    } else if (log.status && log.status.toLowerCase().includes('error')) {
+    } else if (log.status === 'Error') {
       statusValue = -1;
-    } else if (log.status && log.status.toLowerCase().includes('warning')) {
+    } else if (log.status === 'Warning') {
       statusValue = 0;
     } else {
       statusValue = 0;
     }
 
     return {
-      timestamp: new Date(log.timestamp).toLocaleTimeString(),
+      timestamp: log.timestamp,
       status: statusValue,
     };
   });
@@ -142,10 +142,11 @@ const LogsPage = () => {
         <TableHead>
           <TableRow>
             <TableCell>Timestamp</TableCell>
-            <TableCell>Device ID</TableCell>
+            <TableCell>Device</TableCell>
             <TableCell>User ID</TableCell>
             <TableCell>Action</TableCell>
             <TableCell>Status</TableCell>
+            <TableCell>Network</TableCell>
             <TableCell>Source</TableCell>
           </TableRow>
         </TableHead>
@@ -153,10 +154,11 @@ const LogsPage = () => {
           {logs.map((log, index) => (
             <TableRow key={index}>
               <TableCell>{log.timestamp}</TableCell>
-              <TableCell>{log.device_id}</TableCell>
+              <TableCell>{log.device}</TableCell>
               <TableCell>{log.user_id}</TableCell>
               <TableCell>{log.action}</TableCell>
               <TableCell>{log.status}</TableCell>
+              <TableCell>{log.network}</TableCell>
               <TableCell>{log.source}</TableCell>
             </TableRow>
           ))}
