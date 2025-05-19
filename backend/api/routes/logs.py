@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from elasticsearch import AsyncElasticsearch, RequestError, ConnectionError
 from elasticsearch.exceptions import NotFoundError
 from .auth import get_current_user
-from models.logs import Log
 from datetime import datetime
 
 router = APIRouter()
@@ -14,17 +13,6 @@ es = AsyncElasticsearch(
     timeout=30,
     retry_on_timeout=True
 )
-
-# Modelo Log ajustado para incluir nuevos campos
-class Log:
-    def __init__(self, timestamp, device, user_id, action, status, network, source):
-        self.timestamp = timestamp
-        self.device = device
-        self.user_id = user_id
-        self.action = action
-        self.status = status
-        self.network = network
-        self.source = source
 
 @router.get("/")
 async def fetch_logs(before: str = None, current_user: dict = Depends(get_current_user)):
@@ -115,10 +103,12 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
                 "timestamp": formatted_timestamp,
                 "device": source.get("winlog", {}).get("event_data", {}).get("Adapter", source.get("host", {}).get("name", "")),
                 "user_id": source.get("winlog", {}).get("user", {}).get("identifier", ""),
+                "ip": source.get("source", {}).get("ip", "-"),  # IP no disponible en estos logs
                 "action": action,
                 "status": status,
                 "network": source.get("winlog", {}).get("event_data", {}).get("SSID", ""),
-                "source": source.get("event", {}).get("provider", source.get("host", {}).get("hostname", ""))
+                "source": source.get("event", {}).get("provider", source.get("host", {}).get("hostname", "")),
+                "message": source.get("message", "")
             }
             logs.append(log_entry)
 

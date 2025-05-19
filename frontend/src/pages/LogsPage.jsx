@@ -144,10 +144,12 @@ const LogsPage = () => {
             <TableCell>Timestamp</TableCell>
             <TableCell>Device</TableCell>
             <TableCell>User ID</TableCell>
+            <TableCell>IP</TableCell>
             <TableCell>Action</TableCell>
             <TableCell>Status</TableCell>
             <TableCell>Network</TableCell>
             <TableCell>Source</TableCell>
+            <TableCell>Message</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -156,10 +158,12 @@ const LogsPage = () => {
               <TableCell>{log.timestamp}</TableCell>
               <TableCell>{log.device}</TableCell>
               <TableCell>{log.user_id}</TableCell>
+              <TableCell>{log.ip}</TableCell>
               <TableCell>{log.action}</TableCell>
               <TableCell>{log.status}</TableCell>
               <TableCell>{log.network}</TableCell>
               <TableCell>{log.source}</TableCell>
+              <TableCell>{log.message}</TableCell>
             </TableRow>
           ))}
         </TableBody>
