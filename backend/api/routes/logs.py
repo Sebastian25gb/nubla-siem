@@ -20,8 +20,8 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant ID not found in token")
 
-    # Usamos un índice fijo para testuser
-    index_name = "nubla-logs-testuser"
+    # Usamos un patrón para incluir todos los índices relevantes
+    index_name = ".ds-nubla-logs-testuser-*"
 
     try:
         # Verificar conexión a Elasticsearch
@@ -99,11 +99,16 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
             elif "warning" in status.lower():
                 status = "Warning"
 
+            # Obtener la IP del host (tomamos la primera IP disponible)
+            ip = source.get("host", {}).get("ip", "-")
+            if isinstance(ip, list):
+                ip = ip[0] if ip else "-"
+
             log_entry = {
                 "timestamp": formatted_timestamp,
                 "device": source.get("winlog", {}).get("event_data", {}).get("Adapter", source.get("host", {}).get("name", "")),
                 "user_id": source.get("winlog", {}).get("user", {}).get("identifier", ""),
-                "ip": source.get("source", {}).get("ip", "-"),  # IP no disponible en estos logs
+                "ip": ip,
                 "action": action,
                 "status": status,
                 "network": source.get("winlog", {}).get("event_data", {}).get("SSID", ""),
