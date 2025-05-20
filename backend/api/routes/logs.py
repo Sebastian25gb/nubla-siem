@@ -6,7 +6,6 @@ from datetime import datetime
 
 router = APIRouter()
 
-# Cliente de Elasticsearch
 es = AsyncElasticsearch(
     hosts=["http://elasticsearch:9200"],
     basic_auth=("elastic", "yourpassword"),
@@ -20,19 +19,15 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant ID not found in token")
 
-    # Usamos un patrón para incluir todos los índices relevantes
     index_name = ".ds-nubla-logs-testuser-*"
 
     try:
-        # Verificar conexión a Elasticsearch
         if not await es.ping():
             raise HTTPException(status_code=503, detail="Elasticsearch is not available")
 
-        # Verificar si el índice existe
         if not await es.indices.exists(index=index_name):
             return []
 
-        # Construir la consulta
         query_body = {
             "query": {
                 "bool": {
@@ -61,26 +56,23 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
                 }
             })
 
-        # Buscar logs en Elasticsearch
         response = await es.search(
             index=index_name,
             body=query_body
         )
 
-        # Transformar los logs al formato deseado
         logs = []
         for hit in response["hits"]["hits"]:
             source = hit["_source"]
             
-            # Formatear el timestamp
-            timestamp_str = source.get("@timestamp", "")
+            # Usar winlog.event_data.TimeCreated o event.created como timestamp
+            timestamp_str = source.get("winlog", {}).get("event_data", {}).get("TimeCreated", source.get("event", {}).get("created", source.get("@timestamp", "")))
             try:
                 timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S.%fZ")
                 formatted_timestamp = timestamp.strftime("%d/%m/%y %H:%M:%S")
             except ValueError:
                 formatted_timestamp = timestamp_str
 
-            # Determinar la acción (conexión/desconexión)
             event_code = source.get("event", {}).get("code", "")
             message = source.get("message", "")
             if event_code == "11005" and "seguridad inalámbrica" in message:
@@ -90,7 +82,6 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
             else:
                 action = source.get("event", {}).get("action", event_code)
 
-            # Mapear el estado
             status = source.get("log", {}).get("level", "")
             if status == "información":
                 status = "Success"
@@ -99,10 +90,7 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
             elif "warning" in status.lower():
                 status = "Warning"
 
-            # Obtener la IP del host (tomamos la primera IP disponible)
-            ip = source.get("host", {}).get("ip", "-")
-            if isinstance(ip, list):
-                ip = ip[0] if ip else "-"
+            ip = source.get("source", {}).get("ip", "-")
 
             log_entry = {
                 "timestamp": formatted_timestamp,
