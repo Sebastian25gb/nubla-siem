@@ -90,7 +90,8 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
             elif "warning" in status.lower():
                 status = "Warning"
 
-            ip = source.get("source", {}).get("ip", "-")
+            # Usar host.ip en lugar de source.ip, tomando la primera IP de la lista
+            ip = source.get("host", {}).get("ip", ["-"])[0]
 
             log_entry = {
                 "timestamp": formatted_timestamp,
