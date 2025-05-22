@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routes import auth, logs
+from api.routes import auth, logs, register
 
 app = FastAPI()
 
@@ -16,3 +16,8 @@ app.add_middleware(
 # Incluir rutas
 app.include_router(auth.router, prefix="/token")
 app.include_router(logs.router, prefix="/logs")
+app.include_router(register.router, prefix="/api")  # Añade el router de register
+
+@app.get("/")
+async def root():
+    return {"message": "Welcome to Nubla SIEM API"}
