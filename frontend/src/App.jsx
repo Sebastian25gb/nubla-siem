@@ -9,6 +9,7 @@ import { AuthProvider, AuthContext } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import LogsPage from './pages/LogsPage';
+import Register from './pages/register'; // Importamos el componente Register
 
 // Suprimir advertencias de React Router en desarrollo
 if (process.env.NODE_ENV === 'development') {
@@ -31,6 +32,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<Register />} /> {/* Nueva ruta para el formulario de registro */}
           <Route
             path="/dashboard"
             element={
