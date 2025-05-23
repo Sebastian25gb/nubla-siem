@@ -1,8 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.routes import auth, logs, register
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from api.routes import auth, logs, register, users
 
 app = FastAPI()
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Configurar CORS para permitir solicitudes desde el frontend
 app.add_middleware(
@@ -17,6 +24,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/token")
 app.include_router(logs.router, prefix="/logs")
 app.include_router(register.router, prefix="/api")  # Añade el router de register
+app.include_router(users.router, prefix="/api")
 
 @app.get("/")
 async def root():

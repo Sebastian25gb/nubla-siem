@@ -6,7 +6,8 @@ const Register = () => {
         username: '',
         password: '',
         email: '',
-        role: 'user'
+        role: 'user',
+        tenant_name: ''
     });
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
@@ -75,6 +76,17 @@ const Register = () => {
                         <option value="admin">Admin</option>
                         <option value="analyst">Analyst</option>
                     </select>
+                </div>
+                <div style={{ marginBottom: '15px' }}>
+                    <label>Tenant Name:</label>
+                    <input
+                        type="text"
+                        name="tenant_name"
+                        value={formData.tenant_name}
+                        onChange={handleChange}
+                        required
+                        style={{ width: '100%', padding: '8px', marginTop: '5px' }}
+                    />
                 </div>
                 <button type="submit" style={{ padding: '10px 20px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
                     Register

@@ -2,40 +2,53 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import bcrypt
 from ..db import get_db_connection
+import psycopg2
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 class UserRegister(BaseModel):
     username: str
     password: str
     email: str | None = None
     role: str
+    tenant_name: str
 
 @router.post("/register")
+@limiter.limit("5/minute")  # Limita a 5 solicitudes por minuto por IP
 async def register_user(user: UserRegister):
-    # Validate role
     if user.role not in ['admin', 'user', 'analyst']:
         raise HTTPException(status_code=400, detail="Invalid role. Must be 'admin', 'user', or 'analyst'")
 
-    # Hash the password
-    hashed_password = bcrypt.hashpw(user.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    try:
+        hashed_password = bcrypt.hashpw(user.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to hash password: {str(e)}")
 
-    # Connect to the database
-    conn = get_db_connection()
+    try:
+        conn = get_db_connection()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
+
     try:
         with conn.cursor() as cur:
-            # Check if username already exists
             cur.execute("SELECT 1 FROM users WHERE username = %s", (user.username,))
             if cur.fetchone():
                 raise HTTPException(status_code=400, detail="Username already exists")
 
-            # Check if tenant_id exists (using personal tenant_id: 11)
-            tenant_id = 11  # Tenant 'personal'
-            cur.execute("SELECT 1 FROM tenants WHERE id = %s", (tenant_id,))
-            if not cur.fetchone():
-                raise HTTPException(status_code=400, detail="Tenant does not exist")
+            cur.execute("SELECT id FROM tenants WHERE name = %s", (user.tenant_name,))
+            tenant = cur.fetchone()
+            if tenant:
+                tenant_id = tenant['id']
+            else:
+                cur.execute(
+                    "INSERT INTO tenants (name) VALUES (%s) RETURNING id",
+                    (user.tenant_name,)
+                )
+                tenant_id = cur.fetchone()['id']
 
-            # Insert the new user
             cur.execute(
                 """
                 INSERT INTO users (username, password_hash, email, role, tenant_id)
@@ -47,6 +60,9 @@ async def register_user(user: UserRegister):
             new_user = cur.fetchone()
             conn.commit()
             return {"message": "User registered successfully", "user": new_user}
+    except psycopg2.errors.UniqueViolation as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail="Username or tenant name already exists")
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to register user: {str(e)}")

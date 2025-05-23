@@ -19,7 +19,13 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
     if not tenant_id:
         raise HTTPException(status_code=400, detail="Tenant ID not found in token")
 
-    index_name = ".ds-nubla-logs-testuser-*"
+    role = current_user.get("role")
+    if role == "admin":
+        # Administradores pueden ver logs de todos los usuarios del tenant
+        index_name = f".ds-nubla-logs-{tenant_id}-*"
+    else:
+        # Usuarios normales solo ven sus propios logs
+        index_name = f".ds-nubla-logs-{tenant_id}-*"
 
     try:
         if not await es.ping():
@@ -56,6 +62,14 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
                 }
             })
 
+        if role != "admin":
+            # Filtrar logs por el usuario específico si no es administrador
+            query_body["query"]["bool"]["filter"].append({
+                "match": {
+                    "user_id": current_user.get("id")
+                }
+            })
+
         response = await es.search(
             index=index_name,
             body=query_body
@@ -65,7 +79,6 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
         for hit in response["hits"]["hits"]:
             source = hit["_source"]
             
-            # Usar winlog.event_data.TimeCreated o event.created como timestamp
             timestamp_str = source.get("winlog", {}).get("event_data", {}).get("TimeCreated", source.get("event", {}).get("created", source.get("@timestamp", "")))
             try:
                 timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S.%fZ")
@@ -90,7 +103,6 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
             elif "warning" in status.lower():
                 status = "Warning"
 
-            # Usar host.ip en lugar de source.ip, tomando la primera IP de la lista
             ip = source.get("host", {}).get("ip", ["-"])[0]
 
             log_entry = {
