@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request  # Añadimos Request
 from pydantic import BaseModel
 import bcrypt
 from ..db import get_db_connection
@@ -17,8 +17,8 @@ class UserRegister(BaseModel):
     tenant_name: str
 
 @router.post("/register")
-@limiter.limit("5/minute")  # Limita a 5 solicitudes por minuto por IP
-async def register_user(user: UserRegister):
+@limiter.limit("5/minute")
+async def register_user(user: UserRegister, request: Request):  # Añadimos request
     if user.role not in ['admin', 'user', 'analyst']:
         raise HTTPException(status_code=400, detail="Invalid role. Must be 'admin', 'user', or 'analyst'")
 

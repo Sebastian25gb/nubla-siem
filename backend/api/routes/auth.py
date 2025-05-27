@@ -51,35 +51,52 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         username: str = payload.get("sub")
         tenant: str = payload.get("tenant")
         role: str = payload.get("role")
+        user_id: int = payload.get("id")  # Obtenemos el id del token
         if username is None or tenant is None:
             raise credentials_exception
-        return {"username": username, "tenant": tenant, "role": role}
-    except JWTError:
-        raise credentials_exception
+    except JWTError as e:
+        raise credentials_exception from e
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, username, role, tenant_id FROM users WHERE username = %s", (username,))
+            user = cur.fetchone()
+            if user is None:
+                raise credentials_exception
+            return {
+                "id": user[0],  # Añadimos el ID
+                "username": user[1],
+                "role": user[2],
+                "tenant_id": user[3],
+                "tenant": tenant
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch user: {str(e)}")
+    finally:
+        conn.close()
 
 @router.post("/", response_model=Dict[str, str])
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            # Obtener el usuario y el nombre del tenant
             cur.execute("""
-                SELECT u.password_hash, u.role, t.name AS tenant_name
+                SELECT u.id, u.password_hash, u.role, t.name AS tenant_name
                 FROM users u
                 JOIN tenants t ON u.tenant_id = t.id
                 WHERE u.username = %s
             """, (form_data.username,))
             user = cur.fetchone()
-            if not user or not verify_password(form_data.password, user[0]):
+            if not user or not verify_password(form_data.password, user[1]):
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Incorrect username or password",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-            # Guardar el nombre del tenant y el rol en el token
             access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
             access_token = create_access_token(
-                data={"sub": form_data.username, "tenant": user[2], "role": user[1]},
+                data={"sub": form_data.username, "tenant": user[3], "role": user[2], "id": user[0]},
                 expires_delta=access_token_expires
             )
             return {"access_token": access_token, "token_type": "bearer"}

@@ -10,3 +10,6 @@ redis==5.0.8
 aiokafka==0.10.0
 python-multipart==0.0.9 # Añadimos esta línea
 aiohttp==3.10.5
+slowapi
+pyotp
+qrcode[pil]

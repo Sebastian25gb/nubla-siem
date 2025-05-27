@@ -15,24 +15,24 @@ es = AsyncElasticsearch(
 
 @router.get("/")
 async def fetch_logs(before: str = None, current_user: dict = Depends(get_current_user)):
-    tenant_id = current_user.get("tenant")
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="Tenant ID not found in token")
+    tenant_name = current_user.get("tenant")  # Cambiamos "tenant_id" por "tenant" para obtener el nombre
+    if not tenant_name:
+        raise HTTPException(status_code=400, detail="Tenant name not found in token")
 
     role = current_user.get("role")
-    if role == "admin":
-        # Administradores pueden ver logs de todos los usuarios del tenant
-        index_name = f".ds-nubla-logs-{tenant_id}-*"
-    else:
-        # Usuarios normales solo ven sus propios logs
-        index_name = f".ds-nubla-logs-{tenant_id}-*"
+    user_id = current_user.get("id")
+    if role != "admin" and not user_id:
+        raise HTTPException(status_code=400, detail="User ID not found in token")
+
+    # Usamos el nombre del tenant para construir el índice
+    index_name = f".ds-nubla-logs-{tenant_name}-*"
 
     try:
         if not await es.ping():
             raise HTTPException(status_code=503, detail="Elasticsearch is not available")
 
         if not await es.indices.exists(index=index_name):
-            return []
+            return []  # Si el índice no existe, devolvemos una lista vacía
 
         query_body = {
             "query": {
@@ -62,11 +62,10 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
                 }
             })
 
-        if role != "admin":
-            # Filtrar logs por el usuario específico si no es administrador
+        if role != "admin" and user_id:
             query_body["query"]["bool"]["filter"].append({
                 "match": {
-                    "user_id": current_user.get("id")
+                    "user_id": user_id
                 }
             })
 
