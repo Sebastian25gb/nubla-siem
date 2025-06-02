@@ -1,14 +1,14 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
-import { Container, Typography, Table, TableBody, TableCell, TableHead, TableRow, Button, Box } from '@mui/material';
+import { Container, Typography, Table, TableBody, TableCell, TableHead, TableRow, Box } from '@mui/material';
 
 const UsersPage = () => {
     const { token } = useContext(AuthContext);
     const [users, setUsers] = useState([]);
     const [error, setError] = useState('');
 
-    const fetchUsers = async () => {
+    const fetchUsers = useCallback(async () => {
         try {
             const response = await axios.get('http://107.152.39.90:8000/api/users', {
                 headers: { Authorization: `Bearer ${token}` }
@@ -17,11 +17,11 @@ const UsersPage = () => {
         } catch (err) {
             setError(err.response?.data?.detail || 'Error fetching users');
         }
-    };
+    }, [token]);
 
     useEffect(() => {
         fetchUsers();
-    }, []);
+    }, [fetchUsers]);
 
     return (
         <Container maxWidth="md">

@@ -20,3 +20,5 @@ elasticsearch_data/
 node_modules/
 dist/
 build/
+iptables_backup_2025-05-30.txt
+setup_iptables.sh
