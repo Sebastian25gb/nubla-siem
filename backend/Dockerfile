@@ -1,18 +1,22 @@
-FROM python:3.9-slim
+FROM python:3.9-slim-bullseye
 
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Instalar dependencias para redis-cli, curl, y compilación de tensorflow
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
     redis-tools \
     curl \
     build-essential \
+    libpq-dev \
     libssl-dev \
-    zlib1g-dev \
-    && rm -rf /var/lib/apt/lists/*
+    zlib1g-dev && \
+    pip install --no-cache-dir -r requirements.txt && \
+    apt-get remove -y build-essential libpq-dev libssl-dev zlib1g-dev && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY . .
 

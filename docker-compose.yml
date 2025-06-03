@@ -1,5 +1,4 @@
 services:
-  services:
   filebeat:
     image: docker.elastic.co/beats/filebeat:8.15.0
     user: root
@@ -26,13 +25,15 @@ services:
     environment:
       ZOO_MY_ID: 1
       ZOO_PORT: 2181
+      ZOO_4LW_COMMANDS_WHITELIST: "srvr,ruok,stat"  # Permitir comandos necesarios
     ports:
       - "127.0.0.1:2181:2181"
     healthcheck:
-      test: ["CMD-SHELL", "echo 'ruok' | nc -w 2 localhost 2181 | grep imok"]
+      test: ["CMD-SHELL", "echo srvr | nc localhost 2181 | grep Mode"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 60s  # Más tiempo para el inicio
     deploy:
       resources:
         limits:
@@ -122,7 +123,7 @@ services:
     volumes:
       - esdata:/usr/share/elasticsearch/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -E '\"status\":\"(green|yellow)\"'"]
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -E '\"status\":\"(green|yellow*)\"'"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -149,11 +150,11 @@ services:
       - ./postgres-ssl:/etc/postgresql/ssl
     command: ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/etc/postgresql/ssl/server.crt", "-c", "ssl_key_file=/etc/postgresql/ssl/server.key"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nubla_user -d nubla_db"]
+      test: ["CMD-SHELL", "pg_isready -U nubla_user -d nubla_db -h localhost"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 10
+      start_period: 60s
     deploy:
       resources:
         limits:
