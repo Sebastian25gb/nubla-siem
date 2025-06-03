@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nubla-core
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nubla-core
+  template:
+    metadata:
+      labels:
+        app: nubla-core
+    spec:
+      containers:
+        - name: nubla-core
+          image: nubla/core:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: KAFKA_BROKER
+              value: "kafka:9092"

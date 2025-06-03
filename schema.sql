@@ -15,6 +15,7 @@ CREATE TABLE users (
     tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE, -- Eliminamos la duplicación
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    mfa_secret VARCHAR(255)  -- Nueva columna para MFA
 );
 
 -- Tabla de dispositivos

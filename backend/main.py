@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from api.routes import auth, logs, register, users, mfa
+from api.routes import auth, logs, register, users, mfa, normalizer
 
 app = FastAPI()
 
@@ -26,6 +26,7 @@ app.include_router(logs, prefix="/logs")   # Cambiado de logs.router a logs
 app.include_router(register, prefix="/api")
 app.include_router(users, prefix="/api")
 app.include_router(mfa, prefix="/api")
+app.include_router(normalizer.router, prefix="/normalizer")
 
 @app.get("/")
 async def root():
