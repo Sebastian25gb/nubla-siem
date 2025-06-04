@@ -1,27 +1,9 @@
 filebeat.inputs:
-- type: syslog
-  protocol: udp
+- type: udp
+  id: syslog-udp
+  enabled: true
   host: "0.0.0.0:24224"
-  format: auto
   tags: ["fortigate", "syslog"]
-- type: snmptrap
-  host: "0.0.0.0:162"
-  tags: ["snmp"]
 
-processors:
-  - add_fields:
-      target: ""
-      fields:
-        log.source: nubla
-  - dissect:
-      tokenizer: "<%{pri}>date=%{date} time=%{time} devname=\"%{devname}\" devid=\"%{devid}\" eventtime=%{eventtime} tz=\"%{tz}\" logid=\"%{logid}\" type=\"%{type}\" subtype=\"%{subtype}\" eventtype=\"%{eventtype}\" level=\"%{level}\" vd=\"%{vd}\" severity=\"%{severity}\" srcip=%{srcip} srccountry=\"%{srccountry}\" dstip=%{dstip} dstcountry=\"%{dstcountry}\" srcintf=\"%{srcintf}\" srcintfrole=\"%{srcintfrole}\" sessionid=%{sessionid} action=\"%{action}\" proto=%{proto} service=\"%{service}\" count=%{count} attack=\"%{attack}\" srcport=%{srcport} dstport=%{dstport} attackid=%{attackid} policyid=%{policyid} policytype=\"%{policytype}\" ref=\"%{ref}\" msg=\"%{msg}\" crscore=%{crscore} craction=%{craction} crlevel=\"%{crlevel}\""
-      field: "message"
-      target_prefix: "fortinet"
-      if: "ctx.tags.contains('syslog')"
-
-output.kafka:
-  hosts: ["kafka:9092"]
-  topic: "nubla-logs-%{[tenant_id]}"
-  partition.round_robin:
-    reachable_only: true
-  required_acks: 1
+output.console:
+  pretty: true

@@ -5,6 +5,7 @@ from ..db import get_db_connection
 import psycopg2
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from typing import Optional
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -12,7 +13,7 @@ limiter = Limiter(key_func=get_remote_address)
 class UserRegister(BaseModel):
     username: str
     password: str
-    email: str | None = None
+    email: Optional[str] = None
     role: str
     tenant_name: str
 

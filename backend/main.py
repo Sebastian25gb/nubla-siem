@@ -21,8 +21,8 @@ app.add_middleware(
 )
 
 # Incluir rutas
-app.include_router(auth, prefix="/token")  # Cambiado de auth.router a auth
-app.include_router(logs, prefix="/logs")   # Cambiado de logs.router a logs
+app.include_router(auth, prefix="/token")
+app.include_router(logs, prefix="/logs")
 app.include_router(register, prefix="/api")
 app.include_router(users, prefix="/api")
 app.include_router(mfa, prefix="/api")

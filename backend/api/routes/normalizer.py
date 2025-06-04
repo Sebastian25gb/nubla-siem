@@ -1,12 +1,14 @@
-from fastapi import APIRouter
-from confluent_kafka import Consumer, Producer
+from fastapi import APIRouter, BackgroundTasks
+from confluent_kafka import Consumer
 from transformers import pipeline
 import json
+import asyncio
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-@router.on_event("startup")
-async def startup_event():
+async def consume_kafka():
     consumer = Consumer({
         'bootstrap.servers': 'kafka:9092',
         'group.id': 'normalizer',
@@ -15,21 +17,25 @@ async def startup_event():
     consumer.subscribe(['nubla-logs-*'])
     nlp = pipeline("text-classification")
     
-    while True:
-        msg = consumer.poll(1.0)
-        if msg is None:
-            continue
-        if msg.error():
-            print(f"Consumer error: {msg.error()}")
-            continue
-        
-        log = json.loads(msg.value().decode('utf-8'))
-        # Normalización con NLP
-        log['classification'] = nlp(log['message'])[0]['label']
-        # Enviar a Elasticsearch
-        # (Implementar lógica para enviar a Elasticsearch)
-        print(f"Normalized log: {log}")
+    try:
+        while True:
+            msg = consumer.poll(1.0)
+            if msg is None:
+                await asyncio.sleep(1)  # Evitar consumo excesivo de CPU
+                continue
+            if msg.error():
+                logger.error(f"Consumer error: {msg.error()}")
+                continue
+            
+            log = json.loads(msg.value().decode('utf-8'))
+            log['classification'] = nlp(log['message'])[0]['label']
+            logger.info(f"Normalized log: {log}")
+    except Exception as e:
+        logger.error(f"Kafka consumer error: {str(e)}")
+    finally:
+        consumer.close()
 
 @router.get("/health")
-async def health():
+async def health(background_tasks: BackgroundTasks):
+    background_tasks.add_task(consume_kafka)  # Iniciar consumo en fondo
     return {"status": "healthy"}

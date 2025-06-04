@@ -3,4 +3,6 @@ from .logs import router as logs
 from .register import router as register
 from .users import router as users
 from .mfa import router as mfa
-__all__ = ["auth_router", "logs_router"]
+from .normalizer import router as normalizer
+
+__all__ = ["auth", "logs", "register", "users", "mfa", "normalizer"]
