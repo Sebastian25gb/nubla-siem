@@ -1,34 +1,29 @@
+# /root/nubla-siem/backend/api/routes/auth.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel  # Añadimos esta importación
+from pydantic import BaseModel
 import psycopg2
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
+from core.config import settings
 
 router = APIRouter()
-
-# Configuración de seguridad
-SECRET_KEY = "nubla-siem-secret-key-1234567890"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
-# Modelo de respuesta para el token
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
     mfa_required: bool
 
-# Conexión a PostgreSQL con SSL
 def get_db_connection():
     return psycopg2.connect(
-        dbname="nubla_db",
-        user="nubla_user",
-        password="secure_password_123",
-        host="postgres",
+        dbname=settings.POSTGRES_DB,
+        user=settings.POSTGRES_USER,
+        password=settings.POSTGRES_PASSWORD,
+        host=settings.POSTGRES_HOST,
         sslmode="prefer"
     )
 
@@ -40,9 +35,9 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -52,7 +47,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         username: str = payload.get("sub")
         tenant: str = payload.get("tenant")
         role: str = payload.get("role")
@@ -83,7 +78,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     finally:
         conn.close()
 
-@router.post("/", response_model=TokenResponse)  # Cambiamos Dict[str, str] por TokenResponse
+@router.post("/", response_model=TokenResponse)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     conn = get_db_connection()
     try:
@@ -102,9 +97,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
                     headers={"WWW-Authenticate": "Bearer"},
                 )
 
-            # Verificar si el usuario tiene MFA habilitado
-            if user[4]:  # user[4] es mfa_secret
-                # Generar un token temporal para el paso de MFA
+            if user[4]:
                 temp_token = create_access_token(
                     data={
                         "sub": form_data.username,
@@ -117,8 +110,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
                 )
                 return {"access_token": temp_token, "token_type": "bearer", "mfa_required": True}
 
-            # Si no hay MFA, generar el token final
-            access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
             access_token = create_access_token(
                 data={"sub": form_data.username, "tenant": user[3], "role": user[2], "id": user[0]},
                 expires_delta=access_token_expires

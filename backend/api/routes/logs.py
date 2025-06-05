@@ -1,21 +1,23 @@
+# /root/nubla-siem/backend/api/routes/logs.py
 from fastapi import APIRouter, Depends, HTTPException
 from elasticsearch import AsyncElasticsearch, RequestError, ConnectionError
 from elasticsearch.exceptions import NotFoundError
 from .auth import get_current_user
 from datetime import datetime
+from core.config import settings
 
 router = APIRouter()
 
 es = AsyncElasticsearch(
-    hosts=["http://elasticsearch:9200"],
-    basic_auth=("elastic", "yourpassword"),
+    hosts=[f"http://{settings.ELASTICSEARCH_HOST}:{settings.ELASTICSEARCH_PORT}"],
+    basic_auth=(settings.ELASTICSEARCH_USER, settings.ELASTICSEARCH_PASSWORD),
     timeout=30,
     retry_on_timeout=True
 )
 
 @router.get("/")
 async def fetch_logs(before: str = None, current_user: dict = Depends(get_current_user)):
-    tenant_name = current_user.get("tenant")  # Cambiamos "tenant_id" por "tenant" para obtener el nombre
+    tenant_name = current_user.get("tenant")
     if not tenant_name:
         raise HTTPException(status_code=400, detail="Tenant name not found in token")
 
@@ -24,7 +26,6 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
     if role != "admin" and not user_id:
         raise HTTPException(status_code=400, detail="User ID not found in token")
 
-    # Usamos el nombre del tenant para construir el índice
     index_name = f".ds-nubla-logs-{tenant_name}-*"
 
     try:
@@ -32,7 +33,7 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
             raise HTTPException(status_code=503, detail="Elasticsearch is not available")
 
         if not await es.indices.exists(index=index_name):
-            return []  # Si el índice no existe, devolvemos una lista vacía
+            return []
 
         query_body = {
             "query": {
@@ -77,7 +78,6 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
         logs = []
         for hit in response["hits"]["hits"]:
             source = hit["_source"]
-            
             timestamp_str = source.get("winlog", {}).get("event_data", {}).get("TimeCreated", source.get("event", {}).get("created", source.get("@timestamp", "")))
             try:
                 timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S.%fZ")

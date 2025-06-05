@@ -1,3 +1,4 @@
+# /root/nubla-siem/backend/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -11,7 +12,6 @@ limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Configurar CORS para permitir solicitudes desde el frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000", "http://107.152.39.90:3000"],
@@ -20,13 +20,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Incluir rutas
 app.include_router(auth, prefix="/token")
 app.include_router(logs, prefix="/logs")
 app.include_router(register, prefix="/api")
 app.include_router(users, prefix="/api")
 app.include_router(mfa, prefix="/api")
-app.include_router(normalizer.router, prefix="/normalizer")
+app.include_router(normalizer, prefix="/normalizer")
 
 @app.get("/")
 async def root():

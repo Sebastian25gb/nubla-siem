@@ -1,9 +1,0 @@
-filebeat.inputs:
-- type: udp
-  id: syslog-udp
-  enabled: true
-  host: "0.0.0.0:24224"
-  tags: ["fortigate", "syslog"]
-
-output.console:
-  pretty: true

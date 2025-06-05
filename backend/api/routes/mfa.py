@@ -1,18 +1,16 @@
+# /root/nubla-siem/backend/api/routes/mfa.py
 from fastapi import APIRouter, HTTPException, Depends
 import pyotp
 import qrcode
 from io import BytesIO
 import base64
-from pydantic import BaseModel  # Añadimos esta importación
+from pydantic import BaseModel
 from ..db import get_db_connection
-from .auth import get_current_user, create_access_token  # Añadimos create_access_token
+from .auth import get_current_user, create_access_token
 from datetime import timedelta
+from core.config import settings
 
 router = APIRouter()
-
-SECRET_KEY = "your-secret-key"  # Debería coincidir con el de auth.py
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 class Token(BaseModel):
     access_token: str
@@ -25,10 +23,8 @@ async def enable_mfa(current_user: dict = Depends(get_current_user)):
     if not user_id:
         raise HTTPException(status_code=400, detail="User ID not found in token")
 
-    # Generar un secreto TOTP
     totp_secret = pyotp.random_base32()
 
-    # Guardar el secreto en la base de datos
     try:
         conn = get_db_connection()
     except Exception as e:
@@ -50,16 +46,13 @@ async def enable_mfa(current_user: dict = Depends(get_current_user)):
     finally:
         conn.close()
 
-    # Generar la URI para el código QR
     totp_uri = pyotp.totp.TOTP(totp_secret).provisioning_uri(name=username, issuer_name="NublaSIEM")
 
-    # Generar el código QR
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(totp_uri)
     qr.make(fit=True)
     img = qr.make_image(fill="black", back_color="white")
 
-    # Convertir la imagen a base64 para enviarla al frontend
     buffered = BytesIO()
     img.save(buffered, format="PNG")
     qr_code_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
@@ -100,8 +93,7 @@ async def verify_mfa(mfa_code: MFACode, current_user: dict = Depends(get_current
             if not totp.verify(mfa_code.code):
                 raise HTTPException(status_code=401, detail="Invalid MFA code")
 
-            # Generar el token JWT final
-            access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
             access_token = create_access_token(
                 data={"sub": user_id, "username": username, "role": role, "tenant_id": tenant_id},
                 expires_delta=access_token_expires
