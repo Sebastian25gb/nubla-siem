@@ -1,5 +1,27 @@
 # /root/nubla-siem/docker-compose.yml
 services:
+  fluentd:
+    image: fluent/fluentd:v1.16-1
+    ports:
+      - "24224:24224/udp"
+    volumes:
+      - ./fluentd/fluent.conf:/fluentd/etc/fluent.conf
+    networks:
+      - nubla-siem_default
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nubla-siem_default
+
   zookeeper:
     image: zookeeper:3.8.0
     environment:
@@ -32,12 +54,15 @@ services:
     environment:
       - PYTHONPATH=/app
       - DATABASE_URL=postgresql://nubla_user:secure_password_123@postgres:5432/nubla_db
+      - RABBITMQ_HOST=rabbitmq:5672
       - ELASTICSEARCH_HOST=elasticsearch
       - REDIS_HOST=redis:6379
     volumes:
       - ./.env:/app/.env:ro
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
