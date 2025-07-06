@@ -1,0 +1,7 @@
+FROM fluent/fluentd:v1.16-debian
+USER root
+RUN gem install fluent-plugin-rabbitmq -v 0.1.4 --no-document
+RUN apt-get update && apt-get install -y netcat-traditional bash curl procps && apt-get clean
+RUN rm -f /fluentd/etc/fluent.conf
+COPY fluentd/fluent.conf /fluentd/etc/fluent.conf
+USER fluent

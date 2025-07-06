@@ -9,6 +9,7 @@ RUN apt-get update && \
     redis-tools \
     curl \
     postgresql-client \
+    librdkafka-dev \
     && \
     pip install --no-cache-dir -r requirements.txt && \
     apt-get autoremove -y && \

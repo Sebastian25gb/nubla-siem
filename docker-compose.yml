@@ -1,14 +1,4 @@
-# /root/nubla-siem/docker-compose.yml
 services:
-  fluentd:
-    image: fluent/fluentd:v1.16-1
-    ports:
-      - "24224:24224/udp"
-    volumes:
-      - ./fluentd/fluent.conf:/fluentd/etc/fluent.conf
-    networks:
-      - nubla-siem_default
-
   rabbitmq:
     image: rabbitmq:3-management
     ports:
@@ -16,9 +6,35 @@ services:
       - "127.0.0.1:15672:15672"
     healthcheck:
       test: ["CMD", "rabbitmqctl", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=securepass
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - nubla-siem_default
+
+  fluentd:
+    build:
+      context: .
+      dockerfile: Dockerfile.fluentd
+    ports:
+      - "24224:24224/udp"
+      - "24225:24225/udp"
+    volumes:
+      - ./fluentd/logs:/fluentd/log
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep '[f]luentd' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     networks:
       - nubla-siem_default
 
@@ -43,10 +59,13 @@ services:
         reservations:
           memory: "256m"
     restart: unless-stopped
+    volumes:
+      - zookeeper_data:/data
     networks:
       - nubla-siem_default
 
   backend:
+    image: nubla-siem-backend
     build:
       context: ./backend
     ports:
@@ -54,9 +73,15 @@ services:
     environment:
       - PYTHONPATH=/app
       - DATABASE_URL=postgresql://nubla_user:secure_password_123@postgres:5432/nubla_db
-      - RABBITMQ_HOST=rabbitmq:5672
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_QUEUE=nubla_logs_default
+      - RABBITMQ_EXCHANGE=logs_default
+      - RABBITMQ_ROUTING_KEY=nubla.log.default
+      - RABBITMQ_USER=admin
+      - RABBITMQ_PASSWORD=securepass
       - ELASTICSEARCH_HOST=elasticsearch
       - REDIS_HOST=redis:6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     volumes:
       - ./.env:/app/.env:ro
     depends_on:
@@ -68,7 +93,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "60", "--workers", "2"]
+      kafka:
+        condition: service_healthy
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "60", "--workers", "1"]
     deploy:
       resources:
         limits:
@@ -76,6 +103,78 @@ services:
         reservations:
           memory: "1g"
     restart: unless-stopped
+    networks:
+      - nubla-siem_default
+
+  backend-consumer:
+    build:
+      context: ./backend
+    environment:
+      - PYTHONPATH=/app
+      - DATABASE_URL=postgresql://nubla_user:secure_password_123@postgres:5432/nubla_db
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_QUEUE=nubla_logs_default
+      - RABBITMQ_EXCHANGE=logs_default
+      - RABBITMQ_ROUTING_KEY=nubla.log.default
+      - RABBITMQ_USER=admin
+      - RABBITMQ_PASSWORD=securepass
+      - ELASTICSEARCH_HOST=elasticsearch
+      - REDIS_HOST=redis:6379
+      - TENANT_ID=default
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    volumes:
+      - ./.env:/app/.env:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      fluentd:
+        condition: service_healthy
+    command: ["python", "rabbitmq_consumer.py"]
+    deploy:
+      resources:
+        limits:
+          memory: "1g"
+        reservations:
+          memory: "512m"
+    restart: unless-stopped
+    networks:
+      - nubla-siem_default
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    ports:
+      - "127.0.0.1:9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    environment:
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=TRACE,kafka.coordinator.group=TRACE"
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_MESSAGE_MAX_BYTES: 10485760
+      KAFKA_COMPRESSION_TYPE: gzip
+      KAFKA_CLUSTER_ID: "nubla-siem-cluster"
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 15s
+      retries: 20
+      start_period: 600s  # Aumentado a 300s
+    deploy:
+      resources:
+        limits:
+          memory: "2g"
+        reservations:
+          memory: "1g"
     networks:
       - nubla-siem_default
 
@@ -101,17 +200,16 @@ services:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - xpack.security.authc.api_key.enabled=false
-      - xpack.security.transport.ssl.enabled=false
       - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
     ports:
       - "9200:9200"
     volumes:
-      - esdata:/usr/share/elasticsearch/data
+      - es_data:/usr/share/elasticsearch/data
     healthcheck:
       test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -E '\"status\":\"(green|yellow*)\"'"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 7
       start_period: 60s
     deploy:
       resources:
@@ -133,15 +231,12 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
-      - ./postgres-ssl:/etc/postgresql/ssl
-    command: ["postgres", "-c", "ssl=on", "-c", "ssl_cert_file=/etc/postgresql/ssl/server.crt", "-c", "ssl_key_file=/etc/postgresql/ssl/server.key"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nubla_user -d nubla_db -h localhost"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 60s
+      retries: 15
+      start_period: 90s
     deploy:
       resources:
         limits:
@@ -177,7 +272,13 @@ networks:
     driver: bridge
 
 volumes:
-  esdata:
+  es_data:
     driver: local
   postgres_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  kafka_data:
+    driver: local
+  zookeeper_data:
     driver: local
