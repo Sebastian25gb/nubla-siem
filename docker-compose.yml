@@ -168,7 +168,7 @@ services:
       interval: 10s
       timeout: 15s
       retries: 20
-      start_period: 600s  # Aumentado a 300s
+      start_period: 600s
     deploy:
       resources:
         limits:
@@ -179,6 +179,7 @@ services:
       - nubla-siem_default
 
   frontend:
+    image: nubla-siem-frontend
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -186,10 +187,12 @@ services:
       - "3000:3000"
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - ./.env:/app/.env:ro
+    deploy:
+      resources:
+        limits:
+          memory: "1g"
+        reservations:
+          memory: "512m"
     restart: unless-stopped
     networks:
       - nubla-siem_default
@@ -202,7 +205,7 @@ services:
       - xpack.security.authc.api_key.enabled=false
       - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
     ports:
-      - "9200:9200"
+      - "9200:9200" # Mantenido según tu preferencia
     volumes:
       - es_data:/usr/share/elasticsearch/data
     healthcheck:
