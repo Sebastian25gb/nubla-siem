@@ -47,11 +47,11 @@ services:
     ports:
       - "127.0.0.1:2181:2181"
     healthcheck:
-      test: ["CMD-SHELL", "echo srvr | nc localhost 2181 | grep Mode"]
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 60s
+      start_period: 120s
     deploy:
       resources:
         limits:
@@ -64,45 +64,39 @@ services:
     networks:
       - nubla-siem_default
 
-  backend:
-    image: nubla-siem-backend
-    build:
-      context: ./backend
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
     ports:
-      - "8000:8000"
-    environment:
-      - PYTHONPATH=/app
-      - DATABASE_URL=postgresql://nubla_user:secure_password_123@postgres:5432/nubla_db
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_QUEUE=nubla_logs_default
-      - RABBITMQ_EXCHANGE=logs_default
-      - RABBITMQ_ROUTING_KEY=nubla.log.default
-      - RABBITMQ_USER=admin
-      - RABBITMQ_PASSWORD=securepass
-      - ELASTICSEARCH_HOST=elasticsearch
-      - REDIS_HOST=redis:6379
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - "127.0.0.1:9092:9092"
     volumes:
-      - ./.env:/app/.env:ro
+      - kafka_data:/var/lib/kafka/data
+    environment:
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=TRACE,kafka.coordinator.group=TRACE"
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_MESSAGE_MAX_BYTES: 10485760
+      KAFKA_COMPRESSION_TYPE: gzip
+      KAFKA_CLUSTER_ID: "191dc6fd-a576-48f4-835e-36274636ae23"  # Reemplaza con tu UUID generado
     depends_on:
-      postgres:
+      zookeeper:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      elasticsearch:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "60", "--workers", "1"]
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka:9092 --list"]
+      interval: 10s
+      timeout: 15s
+      retries: 30
+      start_period: 900s
     deploy:
       resources:
         limits:
           memory: "2g"
         reservations:
           memory: "1g"
-    restart: unless-stopped
     networks:
       - nubla-siem_default
 
@@ -111,15 +105,12 @@ services:
       context: ./backend
     environment:
       - PYTHONPATH=/app
-      - DATABASE_URL=postgresql://nubla_user:secure_password_123@postgres:5432/nubla_db
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_QUEUE=nubla_logs_default
       - RABBITMQ_EXCHANGE=logs_default
       - RABBITMQ_ROUTING_KEY=nubla.log.default
       - RABBITMQ_USER=admin
       - RABBITMQ_PASSWORD=securepass
-      - ELASTICSEARCH_HOST=elasticsearch
-      - REDIS_HOST=redis:6379
       - TENANT_ID=default
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
     volumes:
@@ -142,51 +133,22 @@ services:
     networks:
       - nubla-siem_default
 
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0
-    ports:
-      - "127.0.0.1:9092:9092"
-    volumes:
-      - kafka_data:/var/lib/kafka/data
-    environment:
-      KAFKA_LOG4J_LOGGERS: "kafka.controller=TRACE,kafka.coordinator.group=TRACE"
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_MESSAGE_MAX_BYTES: 10485760
-      KAFKA_COMPRESSION_TYPE: gzip
-      KAFKA_CLUSTER_ID: "nubla-siem-cluster"
-    depends_on:
-      zookeeper:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
-      interval: 10s
-      timeout: 15s
-      retries: 20
-      start_period: 600s
-    deploy:
-      resources:
-        limits:
-          memory: "2g"
-        reservations:
-          memory: "1g"
-    networks:
-      - nubla-siem_default
-
-  frontend:
-    image: nubla-siem-frontend
+  normalizer:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+      context: ./backend
+    environment:
+      - PYTHONPATH=/app
+      - ELASTICSEARCH_HOST=elasticsearch
+      - TENANT_ID=default
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    volumes:
+      - ./.env:/app/.env:ro
     depends_on:
-      - backend
+      kafka:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    command: ["python", "normalizer.py"]
     deploy:
       resources:
         limits:
@@ -205,7 +167,7 @@ services:
       - xpack.security.authc.api_key.enabled=false
       - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
     ports:
-      - "9200:9200" # Mantenido según tu preferencia
+      - "9200:9200"
     volumes:
       - es_data:/usr/share/elasticsearch/data
     healthcheck:
@@ -224,60 +186,12 @@ services:
     networks:
       - nubla-siem_default
 
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: nubla_user
-      POSTGRES_PASSWORD: secure_password_123
-      POSTGRES_DB: nubla_db
-    ports:
-      - "127.0.0.1:5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nubla_user -d nubla_db -h localhost"]
-      interval: 5s
-      timeout: 5s
-      retries: 15
-      start_period: 90s
-    deploy:
-      resources:
-        limits:
-          memory: "2g"
-        reservations:
-          memory: "1g"
-    restart: unless-stopped
-    networks:
-      - nubla-siem_default
-
-  redis:
-    image: redis:7.0
-    ports:
-      - "127.0.0.1:6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: "512m"
-        reservations:
-          memory: "256m"
-    restart: unless-stopped
-    networks:
-      - nubla-siem_default
-
 networks:
   nubla-siem_default:
     driver: bridge
 
 volumes:
   es_data:
-    driver: local
-  postgres_data:
     driver: local
   rabbitmq_data:
     driver: local
