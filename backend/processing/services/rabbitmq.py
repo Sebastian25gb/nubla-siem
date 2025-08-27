@@ -1,5 +1,4 @@
 import pika
-import os
 import json
 from confluent_kafka import Producer
 import logging
@@ -12,11 +11,11 @@ def get_rabbitmq_connection(max_retries=5, retry_delay=5):
     for attempt in range(max_retries):
         try:
             credentials = pika.PlainCredentials(
-                os.getenv("RABBITMQ_USER", "admin"),
-                os.getenv("RABBITMQ_PASSWORD", "securepass")
+                "admin",
+                "securepass"
             )
             parameters = pika.ConnectionParameters(
-                host=os.getenv("RABBITMQ_HOST", "rabbitmq"),
+                host="rabbitmq",
                 port=5672,
                 virtual_host="/",
                 credentials=credentials,
@@ -37,7 +36,7 @@ def get_kafka_producer(max_retries=5, retry_delay=5):
     for attempt in range(max_retries):
         try:
             producer = Producer({
-                'bootstrap.servers': os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092'),
+                'bootstrap.servers': 'kafka:9092',
                 'client.id': 'nubla-rabbitmq-to-kafka',
                 'acks': 1,
                 'compression.type': 'gzip',
@@ -59,7 +58,7 @@ def callback(ch, method, properties, body):
         message = json.loads(body.decode('utf-8'))
         logger.info(f"Received message from RabbitMQ: {message}")
         producer = get_kafka_producer()
-        tenant_id = message.get('tenant_id', os.getenv('TENANT_ID', 'default'))
+        tenant_id = message.get('tenant_id', 'default')
         kafka_topic = f"nubla-logs-{tenant_id}"
         producer.produce(kafka_topic, json.dumps(message).encode('utf-8'))
         producer.flush()
@@ -76,7 +75,7 @@ def consume_rabbitmq():
         try:
             connection = get_rabbitmq_connection()
             channel = connection.channel()
-            tenant_id = os.getenv("TENANT_ID", "default")
+            tenant_id = "default"
             queue = f"nubla_logs_{tenant_id}"
             exchange = f"logs_{tenant_id}"
             routing_key = f"nubla.log.{tenant_id}"

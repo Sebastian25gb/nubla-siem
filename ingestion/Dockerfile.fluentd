@@ -1,4 +1,4 @@
-FROM fluent/fluentd:v1.16-debian
+FROM fluent/fluentd:v1.16-alpine
 
 # Asegurarse de que los comandos se ejecuten como root
 USER root
@@ -24,7 +24,7 @@ RUN mkdir -p /fluentd/log && chown fluent:fluent /fluentd/log && chmod 775 /flue
 # Eliminar la configuración predeterminada
 RUN rm -f /fluentd/etc/fluent.conf
 
-COPY fluentd/fluent.conf /fluentd/etc/fluent.conf
+COPY fluent.conf /fluentd/etc/fluent.conf
 
 # Cambiar al usuario fluent para ejecutar Fluentd
 USER fluent

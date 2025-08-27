@@ -1,30 +1,19 @@
-# /root/nubla-siem/backend/api/routes/logs.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from elasticsearch import AsyncElasticsearch, RequestError, ConnectionError
 from elasticsearch.exceptions import NotFoundError
-from .auth import get_current_user
 from datetime import datetime
-from core.config import settings
 
 router = APIRouter()
 
 es = AsyncElasticsearch(
-    hosts=[f"http://{settings.ELASTICSEARCH_HOST}:{settings.ELASTICSEARCH_PORT}"],
-    basic_auth=(settings.ELASTICSEARCH_USER, settings.ELASTICSEARCH_PASSWORD),
+    hosts=["http://elasticsearch:9200"],
     timeout=30,
     retry_on_timeout=True
 )
 
 @router.get("/")
-async def fetch_logs(before: str = None, current_user: dict = Depends(get_current_user)):
-    tenant_name = current_user.get("tenant")
-    if not tenant_name:
-        raise HTTPException(status_code=400, detail="Tenant name not found in token")
-
-    role = current_user.get("role")
-    user_id = current_user.get("id")
-    if role != "admin" and not user_id:
-        raise HTTPException(status_code=400, detail="User ID not found in token")
+async def fetch_logs(before: str = None):
+    tenant_name = "default"  # Asumir default ya que no hay auth/DB
 
     index_name = f".ds-nubla-logs-{tenant_name}-*"
 
@@ -60,13 +49,6 @@ async def fetch_logs(before: str = None, current_user: dict = Depends(get_curren
                     "@timestamp": {
                         "lt": before
                     }
-                }
-            })
-
-        if role != "admin" and user_id:
-            query_body["query"]["bool"]["filter"].append({
-                "match": {
-                    "user_id": user_id
                 }
             })
 

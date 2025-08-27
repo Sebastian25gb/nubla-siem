@@ -19,7 +19,7 @@ services:
 
   fluentd:
     build:
-      context: .
+      context: ./ingestion
       dockerfile: Dockerfile.fluentd
     ports:
       - "24224:24224/udp"
@@ -102,7 +102,7 @@ services:
 
   backend-consumer:
     build:
-      context: ./backend
+      context: ./backend/processing
     environment:
       - PYTHONPATH=/app
       - RABBITMQ_HOST=rabbitmq
@@ -113,8 +113,6 @@ services:
       - RABBITMQ_PASSWORD=securepass
       - TENANT_ID=default
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-    volumes:
-      - ./.env:/app/.env:ro
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -135,14 +133,12 @@ services:
 
   normalizer:
     build:
-      context: ./backend
+      context: ./backend/processing
     environment:
       - PYTHONPATH=/app
       - ELASTICSEARCH_HOST=elasticsearch
       - TENANT_ID=default
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-    volumes:
-      - ./.env:/app/.env:ro
     depends_on:
       kafka:
         condition: service_healthy

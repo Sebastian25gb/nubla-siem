@@ -1,4 +1,3 @@
-import os
 import logging
 import time
 from confluent_kafka import Consumer, KafkaError
@@ -9,22 +8,22 @@ import json
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuración de Kafka
+# Configuración de Kafka (defaults hardcodeados)
 kafka_config = {
-    'bootstrap.servers': os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'kafka:9092'),
+    'bootstrap.servers': 'kafka:9092',
     'group.id': 'normalizer_group',
     'auto.offset.reset': 'earliest'
 }
 
-# Configuración de Elasticsearch
+# Configuración de Elasticsearch (defaults hardcodeados)
 es_config = {
-    'host': os.getenv('ELASTICSEARCH_HOST', 'elasticsearch'),
+    'host': 'elasticsearch',
     'port': 9200,
     'scheme': 'http'
 }
 
-# Configuración del tenant
-tenant_id = os.getenv('TENANT_ID', 'default')
+# Configuración del tenant (default)
+tenant_id = 'default'
 
 def normalize_log(log):
     """Normaliza el log agregando el tenant_id."""
