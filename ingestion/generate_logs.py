@@ -31,6 +31,9 @@ logs = []
 # Fecha de inicio: hace 7 días
 start_time = datetime.now() - timedelta(days=7)
 
+# Crear el directorio 'logs' si no existe
+os.makedirs("logs", exist_ok=True)
+
 with open("logs/test.log", "w") as f:
     for i in range(num_logs):
         # Incrementar el tiempo en intervalos aleatorios (entre 1 segundo y 1 hora)

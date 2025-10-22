@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routes import logs
+from .routes.logs import router as logs_router  # Importa el 'router' y renómbralo para claridad
 
 app = FastAPI()
 
@@ -12,7 +12,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(logs, prefix="/logs")
+app.include_router(logs_router, prefix="/logs")  # Usa el router importado
 
 @app.get("/")
 async def root():

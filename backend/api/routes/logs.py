@@ -22,7 +22,7 @@ async def fetch_logs(before: str = None):
             raise HTTPException(status_code=503, detail="Elasticsearch is not available")
 
         if not await es.indices.exists(index=index_name):
-            return []
+            return []  # Retorna vacío si no existe index
 
         query_body = {
             "query": {
@@ -31,8 +31,8 @@ async def fetch_logs(before: str = None):
                         {
                             "range": {
                                 "@timestamp": {
-                                    "gte": "2025-05-17T00:00:00.000-05:00",
-                                    "lte": "now"
+                                    "gte": "now-7d/d",  # Ajustado a logs de hace 7 días
+                                    "lte": "now/d"
                                 }
                             }
                         }
@@ -108,6 +108,8 @@ async def fetch_logs(before: str = None):
     except RequestError as e:
         raise HTTPException(status_code=400, detail=f"Elasticsearch query error: {str(e)}")
     except Exception as e:
+        # Loggea el error para depuración
+        print(f"Unexpected error: {str(e)}")  # Agrega esto para ver en consola
         raise HTTPException(status_code=500, detail=f"Unexpected error fetching logs: {str(e)}")
     finally:
         await es.close()
