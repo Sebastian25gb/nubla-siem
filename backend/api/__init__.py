@@ -1,1 +1,0 @@
-# Este archivo está vacío porque normalizer.py y rabbitmq_consumer.py son scripts independientes

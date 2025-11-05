@@ -1,30 +1,14 @@
-FROM fluent/fluentd:v1.16-alpine
+FROM fluent/fluentd:v1.16-debian
 
-# Asegurarse de que los comandos se ejecuten como root
 USER root
+# Instalar plugin de RabbitMQ para salida
+RUN gem install fluent-plugin-rabbitmq --no-document
 
-# Asegurar permisos para el directorio de apt
-RUN mkdir -p /var/lib/apt/lists/partial /var/cache/apt && \
-    chown -R root:root /var/lib/apt /var/cache/apt && \
-    chmod -R 755 /var/lib/apt /var/cache/apt
-
-# Actualizar el índice de paquetes e instalar dependencias necesarias
-RUN apt-get update && \
-    apt-get install -y build-essential ruby-dev netcat-traditional bash curl procps && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Instalar plugins de Fluentd
-RUN gem install fluent-plugin-rabbitmq --no-document && \
-    gem install fluent-plugin-kv-parser --no-document
-
-# Crear directorio de logs con permisos explícitos
-RUN mkdir -p /fluentd/log && chown fluent:fluent /fluentd/log && chmod 775 /fluentd/log
-
-# Eliminar la configuración predeterminada
-RUN rm -f /fluentd/etc/fluent.conf
-
+# Copiar configuración
 COPY fluent.conf /fluentd/etc/fluent.conf
 
-# Cambiar al usuario fluent para ejecutar Fluentd
+# Permisos y usuario no root
+RUN chown -R fluent:fluent /fluentd
 USER fluent
+
+# Comando por defecto (del base image)

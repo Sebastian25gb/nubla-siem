@@ -4,18 +4,16 @@ services:
     ports:
       - "127.0.0.1:5672:5672"
       - "127.0.0.1:15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-securepass}
     healthcheck:
       test: ["CMD", "rabbitmqctl", "status"]
       interval: 5s
       timeout: 5s
       retries: 10
-    environment:
-      - RABBITMQ_DEFAULT_USER=admin
-      - RABBITMQ_DEFAULT_PASS=securepass
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-    networks:
-      - nubla-siem_default
 
   fluentd:
     build:
@@ -23,137 +21,15 @@ services:
       dockerfile: Dockerfile.fluentd
     ports:
       - "24224:24224/udp"
-      - "24225:24225/udp"
-    volumes:
-      - ./fluentd/logs:/fluentd/log
+    environment:
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-securepass}
+      - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE:-logs_default}
+      - RABBITMQ_ROUTING_KEY=${RABBITMQ_ROUTING_KEY:-nubla.log.default}
     depends_on:
       rabbitmq:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "ps aux | grep '[f]luentd' || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    networks:
-      - nubla-siem_default
-
-  zookeeper:
-    image: zookeeper:3.8.0
-    environment:
-      ZOO_MY_ID: 1
-      ZOO_PORT: 2181
-      ZOO_4LW_COMMANDS_WHITELIST: "srvr,ruok,stat"
-    ports:
-      - "127.0.0.1:2181:2181"
-    healthcheck:
-      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 120s
-    deploy:
-      resources:
-        limits:
-          memory: "512m"
-        reservations:
-          memory: "256m"
-    restart: unless-stopped
-    volumes:
-      - zookeeper_data:/data
-    networks:
-      - nubla-siem_default
-
-  kafka:
-    image: confluentinc/cp-kafka:7.5.0
-    ports:
-      - "127.0.0.1:9092:9092"
-    volumes:
-      - kafka_data:/var/lib/kafka/data
-    environment:
-      KAFKA_LOG4J_LOGGERS: "kafka.controller=TRACE,kafka.coordinator.group=TRACE"
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_MESSAGE_MAX_BYTES: 10485760
-      KAFKA_COMPRESSION_TYPE: gzip
-      KAFKA_CLUSTER_ID: "191dc6fd-a576-48f4-835e-36274636ae23"  # Reemplaza con tu UUID generado
-    depends_on:
-      zookeeper:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka:9092 --list"]
-      interval: 10s
-      timeout: 15s
-      retries: 30
-      start_period: 900s
-    deploy:
-      resources:
-        limits:
-          memory: "2g"
-        reservations:
-          memory: "1g"
-    networks:
-      - nubla-siem_default
-
-  backend-consumer:
-    build:
-      context: ./backend/processing
-    environment:
-      - PYTHONPATH=/app
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_QUEUE=nubla_logs_default
-      - RABBITMQ_EXCHANGE=logs_default
-      - RABBITMQ_ROUTING_KEY=nubla.log.default
-      - RABBITMQ_USER=admin
-      - RABBITMQ_PASSWORD=securepass
-      - TENANT_ID=default
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      fluentd:
-        condition: service_healthy
-    command: ["python", "rabbitmq_consumer.py"]
-    deploy:
-      resources:
-        limits:
-          memory: "1g"
-        reservations:
-          memory: "512m"
-    restart: unless-stopped
-    networks:
-      - nubla-siem_default
-
-  normalizer:
-    build:
-      context: ./backend/processing
-    environment:
-      - PYTHONPATH=/app
-      - ELASTICSEARCH_HOST=elasticsearch
-      - TENANT_ID=default
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-    depends_on:
-      kafka:
-        condition: service_healthy
-      elasticsearch:
-        condition: service_healthy
-    command: ["python", "normalizer.py"]
-    deploy:
-      resources:
-        limits:
-          memory: "1g"
-        reservations:
-          memory: "512m"
-    restart: unless-stopped
-    networks:
-      - nubla-siem_default
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
@@ -161,37 +37,62 @@ services:
       - discovery.type=single-node
       - xpack.security.enabled=false
       - xpack.security.authc.api_key.enabled=false
-      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
     ports:
       - "9200:9200"
-    volumes:
-      - es_data:/usr/share/elasticsearch/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -E '\"status\":\"(green|yellow*)\"'"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -E '\"status\":\"(green|yellow)\"'"]
       interval: 10s
       timeout: 5s
       retries: 7
       start_period: 60s
-    deploy:
-      resources:
-        limits:
-          memory: "4g"
-        reservations:
-          memory: "2g"
-    restart: unless-stopped
-    networks:
-      - nubla-siem_default
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
 
-networks:
-  nubla-siem_default:
-    driver: bridge
+  backend-api:
+    build:
+      context: ./backend/app
+    environment:
+      - PYTHONPATH=/app
+      - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-elasticsearch}
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-securepass}
+      - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE:-logs_default}
+      - RABBITMQ_QUEUE=${RABBITMQ_QUEUE:-nubla_logs_default}
+      - RABBITMQ_ROUTING_KEY=${RABBITMQ_ROUTING_KEY:-nubla.log.default}
+      - TENANT_ID=${TENANT_ID:-default}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+
+  backend-consumer:
+    build:
+      context: ./backend/app
+    environment:
+      - PYTHONPATH=/app
+      - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-elasticsearch}
+      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - RABBITMQ_USER=${RABBITMQ_USER:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-securepass}
+      - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE:-logs_default}
+      - RABBITMQ_QUEUE=${RABBITMQ_QUEUE:-nubla_logs_default}
+      - RABBITMQ_ROUTING_KEY=${RABBITMQ_ROUTING_KEY:-nubla.log.default}
+      - TENANT_ID=${TENANT_ID:-default}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: ["python", "-m", "processing.consumer"]
 
 volumes:
   es_data:
-    driver: local
   rabbitmq_data:
-    driver: local
-  kafka_data:
-    driver: local
-  zookeeper_data:
-    driver: local
