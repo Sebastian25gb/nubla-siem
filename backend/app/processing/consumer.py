@@ -4,6 +4,7 @@ import signal
 from typing import Any
 
 from core.logging import configure_logging
+from core.config import settings
 from infrastructure.rabbitmq import get_channel
 from repository.elastic import get_es, index_event
 from processing.normalizer import normalize
@@ -34,8 +35,13 @@ def main():
             logger.exception("processing_failed")
             # Evitar loops: mandar a DLX (nack sin requeue)
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+            try:
+                rk = getattr(method, "routing_key", None)
+            except Exception:
+                rk = None
+            logger.info("nacked_to_dlx", extra={"routing_key": rk})
 
-    ch.basic_consume(queue="nubla_logs_default", on_message_callback=handle, auto_ack=False)
+    ch.basic_consume(queue=settings.rabbitmq_queue, on_message_callback=handle, auto_ack=False)
     logger.info("consumer_started")
 
     try:

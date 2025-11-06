@@ -12,7 +12,7 @@ def _connect():
     return pika.BlockingConnection(params)
 
 def declare_topology(channel: pika.adapters.blocking_connection.BlockingChannel):
-    # Exchange principal (no durable para evitar choque con plugin de Fluentd)
+    # Exchange principal (no durable para evitar choque con plugin
     channel.exchange_declare(
         exchange=settings.rabbitmq_exchange,
         exchange_type="topic",
