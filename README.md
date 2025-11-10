@@ -19,11 +19,11 @@ Detalles completos en la carpeta [docs/](./docs).
 
 ## Empezar (documentación)
 - Lee primero:
-  - [docs/strategy/vision-scope.md](./docs/strategy/vision-scope.md)
-  - [docs/architecture/technical-choices.md](./docs/architecture/technical-choices.md)
-  - [docs/architecture/storage-design.md](./docs/architecture/storage-design.md)
-  - [docs/architecture/multitenancy-design.md](./docs/architecture/multitenancy-design.md)
-  - [docs/work-plan.md](./docs/work-plan.md)
+  - [docs/strategy/vision_scope.md](./docs/strategy/vision_scope.md)
+  - [docs/architecture/technical_choices.md](./docs/architecture/technical_choices.md)
+  - [docs/architecture/storage_design.md](./docs/architecture/storage_design.md)
+  - [docs/architecture/multitenancy_design.md](./docs/architecture/multitenancy_design.md)
+  - [docs/work_plan.md](./docs/work_plan.md)
   - [docs/roadmap.md](./docs/roadmap.md)
 
 ## Variables de entorno
