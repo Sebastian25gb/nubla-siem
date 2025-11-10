@@ -1,73 +1,93 @@
-from typing import Optional, Any, Dict
 import logging
+from typing import Optional, Any, Dict
 
-# The modern elasticsearch client exposes exceptions in elasticsearch.exceptions
-# Import Elasticsearch and try to import ElasticsearchException from the exceptions module.
-# If that import fails (very old/new clients), fall back to a generic Exception to avoid import errors.
+from core.config import settings
+
+# Intentamos importar ambos clientes; usamos el que corresponda según el host.
+try:
+    from opensearchpy import OpenSearch
+    from opensearchpy.exceptions import OpenSearchException
+except Exception:
+    OpenSearch = None  # type: ignore
+    OpenSearchException = Exception  # type: ignore
+
 try:
     from elasticsearch import Elasticsearch
     from elasticsearch.exceptions import ElasticsearchException
 except Exception:
-    # Fallback: import only the client and alias a generic exception for compatibility
-    from elasticsearch import Elasticsearch  # type: ignore
+    Elasticsearch = None  # type: ignore
     ElasticsearchException = Exception  # type: ignore
-
-from core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-def _normalize_es_url(es_host: Optional[str]) -> str:
+def _normalize_url(raw: Optional[str]) -> str:
     """
-    Normalize different ELASTICSEARCH_HOST values into a full URL:
-      - If es_host is None -> return http://elasticsearch:9200 (fallback)
-      - If es_host starts with http:// or https:// -> return as-is
-      - If es_host is host:port or host -> prepend http://
+    Normaliza la variable ELASTICSEARCH_HOST para devolver una URL completa.
+    Casos aceptados:
+      - http(s)://host:port  (se usa tal cual)
+      - host:port            -> se antepone http://
+      - host                 -> se antepone http:// y puerto 9200 si no hay puerto
     """
     fallback = "http://elasticsearch:9200"
-    if not es_host:
+    if not raw:
         return fallback
-
-    es_host = str(es_host).strip()
-
-    # Already a full URL
-    if es_host.startswith("http://") or es_host.startswith("https://"):
-        return es_host
-
-    # Otherwise assume host or host:port -> prepend http://
-    return f"http://{es_host}"
+    raw = raw.strip()
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+    # Si incluye puerto
+    if ":" in raw:
+        return f"http://{raw}"
+    return f"http://{raw}:9200"
 
 
-def get_es() -> Elasticsearch:
+def _is_opensearch(url: str) -> bool:
     """
-    Return an Elasticsearch client. The settings.elasticsearch_host may be any of:
-      - "elasticsearch" (no port) -> http://elasticsearch:9200
-      - "opensearch:9200" -> http://opensearch:9200
-      - "http://opensearch:9200" -> used as-is
-      - "https://es.example.com:9243" -> used as-is
+    Heurística simple: si el host incluye la palabra 'opensearch' asumimos OpenSearch.
     """
-    es_host_setting = getattr(settings, "elasticsearch_host", None)
-    url = _normalize_es_url(es_host_setting)
-    # Use a small default timeout; add verify_certs or auth if you need it later
-    return Elasticsearch(url, request_timeout=30)
+    return "opensearch" in url.lower()
 
 
-def index_event(es_client: Elasticsearch, index: str, body: Dict[str, Any], refresh: Optional[str] = None) -> Dict[str, Any]:
+def get_es():
     """
-    Index a document into the given index. Returns the raw response from Elasticsearch.
-    - es_client: instance returned by get_es()
-    - index: index name (e.g. "logs-default-000001" or "logs-default")
-    - body: JSON-serializable document
-    - refresh: if "wait_for" will wait for the document to be searchable
+    Devuelve un cliente listo para indexar (OpenSearch o Elasticsearch).
+    Mantiene el nombre por compatibilidad con código existente.
     """
+    host_setting = getattr(settings, "elasticsearch_host", None)
+    url = _normalize_url(host_setting)
+
+    if _is_opensearch(url) and OpenSearch:
+        logger.info("using_opensearch_client", extra={"url": url})
+        return OpenSearch(
+            hosts=[url],
+            timeout=30,
+        )
+    if Elasticsearch:
+        logger.info("using_elasticsearch_client", extra={"url": url})
+        return Elasticsearch(url, request_timeout=30)
+
+    raise RuntimeError("No hay cliente disponible (ni opensearch-py ni elasticsearch instalado).")
+
+
+def index_event(es_client, index: str, body: Dict[str, Any], refresh: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Indexa un documento en el índice dado. Para OpenSearch y Elasticsearch funciona igual,
+    salvo que el cliente OpenSearch usa 'body' y el de Elasticsearch (>=8) acepta 'document'.
+    Detectamos el tipo de cliente dinámicamente.
+    """
+    params = {}
+    if refresh:
+        params["refresh"] = refresh
+
     try:
-        params = {}
-        if refresh:
-            params["refresh"] = refresh
-        # modern elasticsearch client uses 'document' kwarg
-        resp = es_client.index(index=index, document=body, params=params)
-        logger.debug("indexed_event", extra={"index": index, "resp": resp})
+        # OpenSearchPy usa 'body'; Elasticsearch python >=8 usa 'document'.
+        if OpenSearch and isinstance(es_client, OpenSearch):
+            resp = es_client.index(index=index, body=body, params=params)
+        else:
+            # Cliente Elasticsearch
+            resp = es_client.index(index=index, document=body, params=params)
+        logger.debug("indexed_event", extra={"index": index, "result": resp.get("result")})
         return resp
-    except ElasticsearchException:
+    except (OpenSearchException, ElasticsearchException, Exception):
         logger.exception("es_index_failed", extra={"index": index})
         raise

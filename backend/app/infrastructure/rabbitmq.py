@@ -1,19 +1,55 @@
 import os
 import logging
 import pika
+from pika.exceptions import ChannelClosedByBroker
 
 from core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-def declare_topology(channel: pika.channel.Channel) -> None:
+def _ensure_exchange(channel: pika.channel.Channel, exchange: str, exchange_type: str = "topic", durable: bool = True) -> pika.channel.Channel:
     """
-    Declare exchanges/queues used by the app. Use env/settings for DLX name to match existing broker config.
-    Declares:
-      - main exchange (from settings.rabbitmq_exchange)
-      - dead-letter exchange (from RABBITMQ_DLX or settings.rabbitmq_dlx)
-      - queue (settings.rabbitmq_queue) with x-dead-letter-exchange pointing to the DLX
+    Ensure an exchange exists. If it already exists, a passive declare will succeed (no-op).
+    If it doesn't exist the passive declare will close the channel; in that case create a fresh
+    channel and declare the exchange with the desired properties.
+    Returns a channel that is open and ready for further operations.
+    """
+    try:
+        # passive=True checks existence without modifying properties
+        channel.exchange_declare(exchange=exchange, passive=True)
+        return channel
+    except ChannelClosedByBroker:
+        # channel closed because exchange doesn't exist; create a new channel and declare it
+        logger.info("exchange_not_found_creating", extra={"exchange": exchange})
+        conn = channel.connection
+        new_ch = conn.channel()
+        new_ch.exchange_declare(exchange=exchange, exchange_type=exchange_type, durable=durable)
+        return new_ch
+
+
+def _ensure_queue(channel: pika.channel.Channel, queue: str, arguments: dict) -> pika.channel.Channel:
+    """
+    Ensure a queue exists. If it already exists, a passive declare will succeed (no-op).
+    If it doesn't exist the passive declare will close the channel; in that case create a fresh
+    channel and declare the queue with the desired arguments.
+    Returns a channel that is open and ready for further operations.
+    """
+    try:
+        channel.queue_declare(queue=queue, passive=True)
+        return channel
+    except ChannelClosedByBroker:
+        logger.info("queue_not_found_creating", extra={"queue": queue, "arguments": arguments})
+        conn = channel.connection
+        new_ch = conn.channel()
+        new_ch.queue_declare(queue=queue, durable=True, arguments=arguments)
+        return new_ch
+
+
+def declare_topology(channel: pika.channel.Channel) -> pika.channel.Channel:
+    """
+    Declare exchanges/queues used by the app in an idempotent and safe way.
+    Returns the (possibly new) open channel to use afterwards.
     """
     exchange = getattr(settings, "rabbitmq_exchange", os.getenv("RABBITMQ_EXCHANGE", "logs_default"))
     queue = getattr(settings, "rabbitmq_queue", os.getenv("RABBITMQ_QUEUE", "nubla_logs_default"))
@@ -21,39 +57,26 @@ def declare_topology(channel: pika.channel.Channel) -> None:
     # Allow overriding DLX via settings or env; default to the DLX observed in the broker
     dlx = getattr(settings, "rabbitmq_dlx", os.getenv("RABBITMQ_DLX", "logs_siem.dlx"))
 
-    # Ensure exchanges exist (durable)
-    try:
-        # Main exchange (topic/direct as appropriate). Use 'topic' for flexibility.
-        channel.exchange_declare(exchange=exchange, exchange_type="topic", durable=True)
-    except Exception:
-        logger.exception("exchange_declare_failed", extra={"exchange": exchange})
-        raise
+    # Exchange: ensure exists (if not, create with durable=True)
+    channel = _ensure_exchange(channel, exchange, exchange_type="topic", durable=True)
 
-    try:
-        # Dead-letter exchange (durable)
-        channel.exchange_declare(exchange=dlx, exchange_type="topic", durable=True)
-    except Exception:
-        logger.exception("dlx_declare_failed", extra={"dlx": dlx})
-        raise
+    # Dead-letter exchange: ensure exists (create if missing)
+    channel = _ensure_exchange(channel, dlx, exchange_type="topic", durable=True)
 
-    # Queue arguments: set DLX to match the broker
+    # Queue arguments: set DLX to match broker / config
     args = {"x-dead-letter-exchange": dlx}
 
-    try:
-        # Declare the queue with the DLX argument (idempotent if args match)
-        channel.queue_declare(queue=queue, durable=True, arguments=args)
-    except Exception:
-        logger.exception("queue_declare_failed", extra={"queue": queue, "arguments": args})
-        raise
+    # Queue: ensure exists (if not, create with args)
+    channel = _ensure_queue(channel, queue, arguments=args)
 
-    # Bind queue to exchange with a generic routing key (if your topology uses routing keys, adapt accordingly)
+    # Bind the queue to the exchange (best-effort). If binding fails it will raise.
     try:
-        # Use a sensible default binding so messages published to the exchange reach the queue.
-        # If your producers publish with specific routing keys, adjust/bind accordingly.
         channel.queue_bind(queue=queue, exchange=exchange, routing_key="#")
     except Exception:
         logger.exception("queue_bind_failed", extra={"queue": queue, "exchange": exchange})
         raise
+
+    return channel
 
 
 def get_channel():
@@ -73,7 +96,7 @@ def get_channel():
     conn = pika.BlockingConnection(params)
     ch = conn.channel()
 
-    # Declare topology idempotently
-    declare_topology(ch)
+    # Declare topology idempotently and get back an open channel
+    ch = declare_topology(ch)
 
     return conn, ch
