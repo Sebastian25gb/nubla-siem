@@ -1,0 +1,91 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Nubla Common Schema (NCS) v1",
+  "description": "Esquema base para eventos en Nubla SIEM. Inspirado en ECS, campos mínimos obligatorios y extensiones opcionales.",
+  "type": "object",
+  "required": ["tenant_id", "@timestamp", "dataset", "message", "schema_version"],
+  "properties": {
+    "tenant_id": {
+      "type": "string",
+      "description": "Identificador del tenant (obligatorio)."
+    },
+    "@timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp UTC ISO8601 del evento (obligatorio)."
+    },
+    "dataset": {
+      "type": "string",
+      "description": "Nombre del dataset / origen lógico (ej: fortinet.fortigate)."
+    },
+    "schema_version": {
+      "type": "string",
+      "description": "Versión del schema NCS (ej: \"1.0.0\")."
+    },
+    "message": {
+      "type": "string",
+      "description": "Mensaje principal o payload resumido del evento."
+    },
+    "category": {
+      "type": "string",
+      "description": "Categoría del evento (ej: authentication, network, process)."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["low","medium","high","critical","info"],
+      "description": "Severidad del evento (opcional)."
+    },
+    "source": {
+      "type": "object",
+      "description": "Información del origen del evento.",
+      "properties": {
+        "ip": { "type": "string", "format": "ipv4" },
+        "port": { "type": "integer" },
+        "host": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "destination": {
+      "type": "object",
+      "description": "Información del destino (si aplica).",
+      "properties": {
+        "ip": { "type": "string", "format": "ipv4" },
+        "port": { "type": "integer" },
+        "host": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "user": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" }
+      },
+      "additionalProperties": true
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Mapa libre de etiquetas para enriquecimientos y metadatos."
+    },
+    "original": {
+      "type": "object",
+      "description": "Campo opcional con el evento original sin normalizar.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "examples": [
+    {
+      "tenant_id": "default",
+      "@timestamp": "2025-11-10T16:20:00Z",
+      "dataset": "syslog.generic",
+      "schema_version": "1.0.0",
+      "message": "SSH login succeeded",
+      "severity": "info",
+      "source": { "ip": "10.0.0.1", "host": "host1.example" },
+      "user": { "id": "jdoe", "name": "John Doe" }
+    }
+  ]
+}
