@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/nublas/nubla-siem/docs/schema/ncs_v1.json",
+  "title": "Nubla Common Schema (NCS) v1",
+  "description": "JSON Schema para registro en Schema Registry. Contrato canónico de eventos NCS v1.",
+  "type": "object",
+  "required": ["tenant_id", "@timestamp", "dataset", "message", "schema_version"],
+  "properties": {
+    "tenant_id": { "type": "string" },
+    "@timestamp": { "type": "string", "format": "date-time" },
+    "dataset": { "type": "string" },
+    "schema_version": { "type": "string" },
+    "message": { "type": "string" },
+    "category": { "type": "string" },
+    "severity": {
+      "type": "string",
+      "enum": ["low","medium","high","critical","info"]
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "ip": { "type": "string", "format": "ipv4" },
+        "port": { "type": "integer" },
+        "host": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "destination": {
+      "type": "object",
+      "properties": {
+        "ip": { "type": "string", "format": "ipv4" },
+        "port": { "type": "integer" },
+        "host": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "user": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" }
+      },
+      "additionalProperties": true
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "original": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "examples": [
+    {
+      "tenant_id": "default",
+      "@timestamp": "2025-11-10T16:20:00Z",
+      "dataset": "syslog.generic",
+      "schema_version": "1.0.0",
+      "message": "SSH login succeeded",
+      "severity": "info",
+      "source": { "ip": "10.0.0.1", "host": "host1.example" },
+      "user": { "id": "jdoe", "name": "John Doe" }
+    }
+  ]
+}

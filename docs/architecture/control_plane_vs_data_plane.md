@@ -13,4 +13,4 @@
 - Membresía y roles: usuario↔tenant↔rol.
 - Ingesta: API keys por tenant (sólo hash; rotación/expiración).
 - Config por tenant: reglas, dashboards, playbooks, conectores, cuotas.
-- Auditoría: acciones administrativas y cambios de configuración.
+- Auditoría: acciones administrativas y cambios de configuración.   
