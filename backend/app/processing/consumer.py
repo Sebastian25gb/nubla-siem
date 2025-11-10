@@ -116,7 +116,7 @@ def main():
                     return
 
             # Indexar
-            index_event(es, index=f"logs-{evt.tenant_id}", body=evt_dict)
+            index_event(es, index=f"logs-{evt.tenant_id}", body=evt_dict, pipeline="ensure_at_timestamp")   
             ch.basic_ack(delivery_tag=method.delivery_tag)
             logger.info("event_indexed", extra={"tenant_id": evt.tenant_id})
         except Exception:
