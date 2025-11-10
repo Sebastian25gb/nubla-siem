@@ -1,6 +1,20 @@
-from typing import Optional
-from elasticsearch import Elasticsearch
+from typing import Optional, Any, Dict
+import logging
+
+# The modern elasticsearch client exposes exceptions in elasticsearch.exceptions
+# Import Elasticsearch and try to import ElasticsearchException from the exceptions module.
+# If that import fails (very old/new clients), fall back to a generic Exception to avoid import errors.
+try:
+    from elasticsearch import Elasticsearch
+    from elasticsearch.exceptions import ElasticsearchException
+except Exception:
+    # Fallback: import only the client and alias a generic exception for compatibility
+    from elasticsearch import Elasticsearch  # type: ignore
+    ElasticsearchException = Exception  # type: ignore
+
 from core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_es_url(es_host: Optional[str]) -> str:
@@ -34,4 +48,26 @@ def get_es() -> Elasticsearch:
     """
     es_host_setting = getattr(settings, "elasticsearch_host", None)
     url = _normalize_es_url(es_host_setting)
-    return Elasticsearch(url)
+    # Use a small default timeout; add verify_certs or auth if you need it later
+    return Elasticsearch(url, request_timeout=30)
+
+
+def index_event(es_client: Elasticsearch, index: str, body: Dict[str, Any], refresh: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Index a document into the given index. Returns the raw response from Elasticsearch.
+    - es_client: instance returned by get_es()
+    - index: index name (e.g. "logs-default-000001" or "logs-default")
+    - body: JSON-serializable document
+    - refresh: if "wait_for" will wait for the document to be searchable
+    """
+    try:
+        params = {}
+        if refresh:
+            params["refresh"] = refresh
+        # modern elasticsearch client uses 'document' kwarg
+        resp = es_client.index(index=index, document=body, params=params)
+        logger.debug("indexed_event", extra={"index": index, "resp": resp})
+        return resp
+    except ElasticsearchException:
+        logger.exception("es_index_failed", extra={"index": index})
+        raise

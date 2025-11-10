@@ -1,60 +1,79 @@
-import pika
+import os
 import logging
-from tenacity import retry, stop_after_attempt, wait_exponential
+import pika
+
 from core.config import settings
 
 logger = logging.getLogger(__name__)
 
-@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=1, max=10))
-def _connect():
-    creds = pika.PlainCredentials(settings.rabbitmq_user, settings.rabbitmq_password)
-    params = pika.ConnectionParameters(host=settings.rabbitmq_host, credentials=creds)
-    return pika.BlockingConnection(params)
 
-def declare_topology(channel: pika.adapters.blocking_connection.BlockingChannel):
-    # Exchange principal (no durable para evitar choque con plugin
-    channel.exchange_declare(
-        exchange=settings.rabbitmq_exchange,
-        exchange_type="topic",
-        durable=False
-    )
+def declare_topology(channel: pika.channel.Channel) -> None:
+    """
+    Declare exchanges/queues used by the app. Use env/settings for DLX name to match existing broker config.
+    Declares:
+      - main exchange (from settings.rabbitmq_exchange)
+      - dead-letter exchange (from RABBITMQ_DLX or settings.rabbitmq_dlx)
+      - queue (settings.rabbitmq_queue) with x-dead-letter-exchange pointing to the DLX
+    """
+    exchange = getattr(settings, "rabbitmq_exchange", os.getenv("RABBITMQ_EXCHANGE", "logs_default"))
+    queue = getattr(settings, "rabbitmq_queue", os.getenv("RABBITMQ_QUEUE", "nubla_logs_default"))
 
-    # Dead-letter exchange (no durable por compatibilidad)
-    dlx = f"{settings.rabbitmq_exchange}.dlx"
-    channel.exchange_declare(
-        exchange=dlx,
-        exchange_type="fanout",
-        durable=False
-    )
+    # Allow overriding DLX via settings or env; default to the DLX observed in the broker
+    dlx = getattr(settings, "rabbitmq_dlx", os.getenv("RABBITMQ_DLX", "logs_siem.dlx"))
 
-    # Cola principal (durable) con DLX
+    # Ensure exchanges exist (durable)
+    try:
+        # Main exchange (topic/direct as appropriate). Use 'topic' for flexibility.
+        channel.exchange_declare(exchange=exchange, exchange_type="topic", durable=True)
+    except Exception:
+        logger.exception("exchange_declare_failed", extra={"exchange": exchange})
+        raise
+
+    try:
+        # Dead-letter exchange (durable)
+        channel.exchange_declare(exchange=dlx, exchange_type="topic", durable=True)
+    except Exception:
+        logger.exception("dlx_declare_failed", extra={"dlx": dlx})
+        raise
+
+    # Queue arguments: set DLX to match the broker
     args = {"x-dead-letter-exchange": dlx}
-    channel.queue_declare(
-        queue=settings.rabbitmq_queue,
-        durable=True,
-        arguments=args
-    )
-    channel.queue_bind(
-        queue=settings.rabbitmq_queue,
-        exchange=settings.rabbitmq_exchange,
-        routing_key=settings.rabbitmq_routing_key
-    )
 
-    # DLQ visible para inspección de errores
-    dlq_queue = f"{settings.rabbitmq_exchange}.dlq"
-    channel.queue_declare(
-        queue=dlq_queue,
-        durable=True
-    )
-    # Fanout: routing key ignorada
-    channel.queue_bind(
-        queue=dlq_queue,
-        exchange=dlx
-    )
+    try:
+        # Declare the queue with the DLX argument (idempotent if args match)
+        channel.queue_declare(queue=queue, durable=True, arguments=args)
+    except Exception:
+        logger.exception("queue_declare_failed", extra={"queue": queue, "arguments": args})
+        raise
+
+    # Bind queue to exchange with a generic routing key (if your topology uses routing keys, adapt accordingly)
+    try:
+        # Use a sensible default binding so messages published to the exchange reach the queue.
+        # If your producers publish with specific routing keys, adjust/bind accordingly.
+        channel.queue_bind(queue=queue, exchange=exchange, routing_key="#")
+    except Exception:
+        logger.exception("queue_bind_failed", extra={"queue": queue, "exchange": exchange})
+        raise
+
 
 def get_channel():
-    conn = _connect()
+    """
+    Create a connection and return (connection, channel).
+    Connection parameters are read from settings or env vars.
+    """
+    host = getattr(settings, "rabbitmq_host", os.getenv("RABBITMQ_HOST", "rabbitmq"))
+    user = getattr(settings, "rabbitmq_user", os.getenv("RABBITMQ_USER", "admin"))
+    password = getattr(settings, "rabbitmq_password", os.getenv("RABBITMQ_PASSWORD", "securepass"))
+    virtual_host = getattr(settings, "rabbitmq_vhost", os.getenv("RABBITMQ_VHOST", "/"))
+    port = int(getattr(settings, "rabbitmq_port", os.getenv("RABBITMQ_PORT", 5672)))
+
+    credentials = pika.PlainCredentials(user, password)
+    params = pika.ConnectionParameters(host=host, port=port, virtual_host=virtual_host, credentials=credentials)
+
+    conn = pika.BlockingConnection(params)
     ch = conn.channel()
+
+    # Declare topology idempotently
     declare_topology(ch)
-    ch.basic_qos(prefetch_count=50)
+
     return conn, ch
