@@ -1,0 +1,37 @@
+{
+  "index_patterns": ["logs-*"],
+  "template": {
+    "settings": {
+      "index": {
+        "number_of_shards": 1,
+        "number_of_replicas": 0
+      }
+    },
+    "mappings": {
+      "dynamic_templates": [
+        {
+          "strings_as_keywords": {
+            "match_mapping_type": "string",
+            "mapping": {
+              "type": "keyword"
+            }
+          }
+        }
+      ],
+      "properties": {
+        "@timestamp": { "type": "date" },
+        "tenant_id": { "type": "keyword" },
+        "dataset": { "type": "keyword" },
+        "severity": { "type": "keyword" },
+        "message": { "type": "text" },
+        "source": {
+          "properties": {
+            "ip": { "type": "ip" },
+            "host": { "type": "keyword" }
+          }
+        }
+      }
+    }
+  },
+  "_meta": { "schema": "NCS-1.0.0" }
+}
