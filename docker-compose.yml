@@ -70,6 +70,19 @@ services:
       retries: 10
     volumes:
       - opensearch_data:/usr/share/opensearch/data
+  metrics-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python docs/operational/metrics/exporter.py
+    environment:
+      - OS_URL=http://opensearch:9200
+      - LOGS_ALIAS=logs-default
+      - PORT=9108
+    ports:
+      - "9108:9108"
+    depends_on:
+      - opensearch
 
   backend-api:
     build:

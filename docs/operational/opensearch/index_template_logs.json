@@ -16,7 +16,12 @@
         "dataset":        { "type": "keyword" },
         "schema_version": { "type": "keyword" },
         "severity":       { "type": "keyword" },
-        "message":        { "type": "text" },
+        "message": {
+          "type": "text",
+          "fields": {
+            "raw": { "type": "keyword", "ignore_above": 512 }
+          }
+        },
         "facility":       { "type": "keyword" },
         "host":           { "type": "keyword" },
         "host_name":      { "type": "keyword" },
@@ -34,7 +39,7 @@
                 "country_name":   { "type": "keyword" },
                 "region_name":    { "type": "keyword" },
                 "city_name":      { "type": "keyword" },
-                "location":       { "type": "geo_point" }
+                "location":       { "type": "geo_point", "ignore_malformed": true }
               }
             }
           }
