@@ -5,7 +5,7 @@
     "settings": {
       "number_of_shards": 1,
       "number_of_replicas": 0,
-      "index.default_pipeline": "ensure_at_timestamp",
+      "index.default_pipeline": "logs_ingest",
       "index.opendistro.index_state_management.rollover_alias": "logs-default"
     },
     "mappings": {
@@ -17,11 +17,26 @@
         "schema_version": { "type": "keyword" },
         "severity":       { "type": "keyword" },
         "message":        { "type": "text" },
-        "host":           { "type": "keyword" },
         "facility":       { "type": "keyword" },
+        "host":           { "type": "keyword" },
+        "host_name":      { "type": "keyword" },
+        "event": {
+          "properties": {
+            "severity": { "type": "integer" }
+          }
+        },
         "source": {
           "properties": {
-            "ip": { "type": "ip" }
+            "ip": { "type": "ip" },
+            "geo": {
+              "properties": {
+                "continent_name": { "type": "keyword" },
+                "country_name":   { "type": "keyword" },
+                "region_name":    { "type": "keyword" },
+                "city_name":      { "type": "keyword" },
+                "location":       { "type": "geo_point" }
+              }
+            }
           }
         }
       }

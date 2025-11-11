@@ -13,31 +13,25 @@ from repository.elastic import get_es, index_event
 
 logger = logging.getLogger(__name__)
 
-# Intentar importar el normalizador; si no existe, usar passthrough
 try:
     from processing.normalizer import normalize  # type: ignore
 except Exception:
     def normalize(x: Dict[str, Any]) -> Dict[str, Any]:  # type: ignore
         return x
 
-
 def to_iso8601(value: Any) -> Any:
     if isinstance(value, datetime):
-        # Aseguramos UTC en formato ISO
         if value.tzinfo is None:
             value = value.replace(tzinfo=timezone.utc)
         return value.isoformat()
     return value
 
-
 def coerce_datetimes(obj: Any) -> Any:
-    # Convierte recursivamente datetime -> str ISO-8601
     if isinstance(obj, dict):
         return {k: coerce_datetimes(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [coerce_datetimes(v) for v in obj]
     return to_iso8601(obj)
-
 
 def load_local_schema(path: str) -> Dict[str, Any]:
     try:
@@ -49,9 +43,7 @@ def load_local_schema(path: str) -> Dict[str, Any]:
         logger.error("load_local_schema_failed", exc_info=True, extra={"path": path})
         raise
 
-
 def build_validator(registry_url: str | None, subject: str, local_path: str) -> Draft7Validator | None:
-    # Por ahora usamos siempre el schema local como fallback
     try:
         schema = load_local_schema(local_path)
         return Draft7Validator(schema)
@@ -59,19 +51,15 @@ def build_validator(registry_url: str | None, subject: str, local_path: str) -> 
         logger.warning("schema_validator_unavailable; continuing_without_validation")
         return None
 
-
 def main() -> None:
-    # OpenSearch/Elasticsearch client
     es = get_es()
 
-    # Schema config
     SCHEMA_REGISTRY_URL = os.getenv("SCHEMA_REGISTRY_URL", getattr(settings, "schema_registry_url", None))
     NCS_SUBJECT = os.getenv("NCS_SUBJECT", "ncs-value")
     NCS_SCHEMA_LOCAL_PATH = os.getenv("NCS_SCHEMA_LOCAL_PATH", "schema/ncs_schema_registry.json")
 
     validator = build_validator(SCHEMA_REGISTRY_URL, NCS_SUBJECT, NCS_SCHEMA_LOCAL_PATH)
 
-    # RabbitMQ connection
     rmq_host = getattr(settings, "rabbitmq_host", os.getenv("RABBITMQ_HOST", "rabbitmq"))
     rmq_user = getattr(settings, "rabbitmq_user", os.getenv("RABBITMQ_USER", "admin"))
     rmq_pass = getattr(settings, "rabbitmq_password", os.getenv("RABBITMQ_PASSWORD", "securepass"))
@@ -92,25 +80,19 @@ def main() -> None:
             elif isinstance(normalized, dict):
                 evt_dict = dict(normalized)
             else:
-                # fallback: intentar serializar y reparsear
                 evt_dict = json.loads(json.dumps(normalized, default=str))
 
-            # Completar mínimos exigidos por el schema ANTES de validar
-            # 1) Asegurar @timestamp presente y de tipo string
             if "@timestamp" not in evt_dict:
                 if "timestamp" in evt_dict:
                     evt_dict["@timestamp"] = evt_dict["timestamp"]
                 else:
                     evt_dict["@timestamp"] = datetime.now(timezone.utc).isoformat()
-            # 2) Convertir cualquier datetime residual a string ISO
             evt_dict = coerce_datetimes(evt_dict)
-            # 3) dataset y schema_version por defecto si faltan
             if "dataset" not in evt_dict:
                 evt_dict["dataset"] = "syslog.generic"
             if "schema_version" not in evt_dict:
                 evt_dict["schema_version"] = "1.0.0"
 
-            # Validación (si hay validador)
             if validator is not None:
                 errors = list(validator.iter_errors(evt_dict))
                 if errors:
@@ -121,9 +103,8 @@ def main() -> None:
                     logger.info("nacked_to_dlx", extra={"routing_key": rk})
                     return
 
-            # Indexar con pipeline ensure_at_timestamp (por consistencia futura)
             tenant = evt_dict.get("tenant_id", "unknown")
-            index_event(es, index=f"logs-{tenant}", body=evt_dict, pipeline="ensure_at_timestamp")
+            index_event(es, index=f"logs-{tenant}", body=evt_dict, pipeline="logs_ingest")
             ch.basic_ack(delivery_tag=method.delivery_tag)
             logger.info("event_indexed", extra={"tenant_id": tenant})
         except Exception:
@@ -135,7 +116,6 @@ def main() -> None:
             rk = getattr(method, "routing_key", None)
             logger.info("nacked_to_dlx", extra={"routing_key": rk})
 
-    # Prefetch 1 para procesar secuencialmente
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=queue_name, on_message_callback=handle, auto_ack=False)
     logger.info("consumer_started")
@@ -149,9 +129,7 @@ def main() -> None:
         except Exception:
             pass
 
-
 if __name__ == "__main__":
-    # Configurar logging básico si se ejecuta como script
     logging.basicConfig(
         level=os.getenv("LOG_LEVEL", "INFO"),
         format="%(message)s",

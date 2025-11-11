@@ -1,0 +1,26 @@
+{
+  "description": "Composite ingest: ensure @timestamp, derive host_name, normalize host, GeoIP, numeric event.severity",
+  "processors": [
+    { "pipeline": { "name": "ensure_at_timestamp" } },
+    {
+      "script": {
+        "lang": "painless",
+        "source": "if (ctx.containsKey('host') && ctx.host != null) { if (ctx.host instanceof Map) { def hn = ctx.host.containsKey('name') ? ctx.host.name : null; if (hn != null) { ctx.host_name = hn; ctx.host = hn; } else { ctx.remove('host'); } } else if (ctx.host instanceof String) { if (!ctx.containsKey('host_name')) { ctx.host_name = ctx.host; } } else { ctx.remove('host'); } }"
+      }
+    },
+    {
+      "geoip": {
+        "field": "source.ip",
+        "target_field": "source.geo",
+        "ignore_missing": true,
+        "ignore_failure": true
+      }
+    },
+    {
+      "script": {
+        "lang": "painless",
+        "source": "if (ctx.containsKey('severity') && ctx.severity != null) { def m = ['info':1,'low':2,'medium':3,'high':4,'critical':5]; if (ctx.severity instanceof String) { def k = ctx.severity.toLowerCase(); if (m.containsKey(k)) { if (!ctx.containsKey('event')) { ctx.event = [:]; } ctx.event.severity = m[k]; } } }"
+      }
+    }
+  ]
+}
