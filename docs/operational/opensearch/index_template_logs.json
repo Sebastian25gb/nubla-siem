@@ -5,7 +5,8 @@
     "settings": {
       "number_of_shards": 1,
       "number_of_replicas": 0,
-      "index.default_pipeline": "ensure_at_timestamp"
+      "index.default_pipeline": "ensure_at_timestamp",
+      "index.opendistro.index_state_management.rollover_alias": "logs-default"
     },
     "mappings": {
       "dynamic": true,
