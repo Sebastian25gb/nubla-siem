@@ -1,0 +1,29 @@
+{
+  "index_patterns": ["logs-*"],
+  "priority": 500,
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "index.default_pipeline": "ensure_at_timestamp"
+    },
+    "mappings": {
+      "dynamic": true,
+      "properties": {
+        "@timestamp":     { "type": "date" },
+        "tenant_id":      { "type": "keyword" },
+        "dataset":        { "type": "keyword" },
+        "schema_version": { "type": "keyword" },
+        "severity":       { "type": "keyword" },
+        "message":        { "type": "text" },
+        "host":           { "type": "keyword" },
+        "facility":       { "type": "keyword" },
+        "source": {
+          "properties": {
+            "ip": { "type": "ip" }
+          }
+        }
+      }
+    }
+  }
+}

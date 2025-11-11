@@ -1,0 +1,43 @@
+{
+  "policy": {
+    "description": "Rollover daily or 1GB or 100k docs; delete after 7d",
+    "default_state": "hot",
+    "states": [
+      {
+        "name": "hot",
+        "actions": [
+          {
+            "retry": { "count": 3, "backoff": "exponential", "delay": "1m" },
+            "rollover": {
+              "min_index_age": "1d",
+              "min_size": "1gb",
+              "min_doc_count": 100000
+            }
+          }
+        ],
+        "transitions": [
+          {
+            "state_name": "delete",
+            "conditions": { "min_index_age": "7d" }
+          }
+        ]
+      },
+      {
+        "name": "delete",
+        "actions": [
+          {
+            "retry": { "count": 3, "backoff": "exponential", "delay": "1m" },
+            "delete": {}
+          }
+        ],
+        "transitions": []
+      }
+    ],
+    "ism_template": [
+      {
+        "index_patterns": ["logs-default-*"],
+        "priority": 100
+      }
+    ]
+  }
+}

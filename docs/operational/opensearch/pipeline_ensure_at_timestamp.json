@@ -1,0 +1,18 @@
+{
+  "description": "Ensure @timestamp and drop legacy timestamp",
+  "processors": [
+    {
+      "set": {
+        "if": "ctx['@timestamp'] == null && ctx.containsKey('timestamp')",
+        "field": "@timestamp",
+        "value": "{{timestamp}}"
+      }
+    },
+    {
+      "remove": {
+        "if": "ctx.containsKey('timestamp') && ctx.containsKey('@timestamp')",
+        "field": "timestamp"
+      }
+    }
+  ]
+}
