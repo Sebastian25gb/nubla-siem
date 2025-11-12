@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
 Normalizador Fortinet mejorado.
-
 - Elimina prefijo syslog "<PRI>" si existe.
 - Extrae key=value (soporta quoted values).
 - Soporta eventtime (epoch en ns) -> @timestamp ISO.
 - Extrae devname/devid -> host, host_name.
-- Extrae msg -> message (si existe) y srcip/dstip -> source/destination.ip.
+- Extrae msg -> message y srcip/dstip -> source/destination.ip.
 - Guarda copia original en original.message_raw y original.raw_kv.
 """
 import re
@@ -39,7 +38,6 @@ def strip_pri(s: str) -> str:
     return PRI_RE.sub('', s, count=1)
 
 def normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
-    # Passthrough si no es dict o no contiene "message"
     if not isinstance(raw, dict):
         return raw
     msg_raw = raw.get("message")
