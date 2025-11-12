@@ -1,15 +1,13 @@
 {
   "vhosts": [
-    {
-      "name": "/"
-    }
+    { "name": "/" }
   ],
   "exchanges": [
     {
       "name": "logs_default",
       "vhost": "/",
       "type": "topic",
-      "durable": false,
+      "durable": true,            
       "auto_delete": false,
       "internal": false,
       "arguments": {}

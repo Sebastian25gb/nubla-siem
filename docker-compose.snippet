@@ -1,0 +1,18 @@
+  rabbitmq-init:
+    image: curlimages/curl:8.3.0
+    depends_on:
+      rabbitmq:
+        condition: service_started
+    volumes:
+      - ./rabbitmq:/defs:ro
+      - ./scripts/rabbitmq:/scripts:ro
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_MGMT_PORT: 15672
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-securepass}
+    entrypoint: ["/bin/sh","-c"]
+    command: >
+      chmod +x /scripts/load_definitions.sh &&
+      /scripts/load_definitions.sh
+    restart: "no"
