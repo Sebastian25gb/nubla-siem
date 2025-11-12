@@ -1,0 +1,24 @@
+{
+  "index_patterns": ["logs-default-*"],
+  "priority": 50,
+  "template": {
+    "mappings": {
+      "dynamic": true,
+      "properties": {
+        "host": {
+          "type": "text",
+          "fields": {
+            "keyword": { "type": "keyword", "ignore_above": 256 }
+          }
+        },
+        "host_name": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+        }
+      }
+    },
+    "settings": {
+      "number_of_shards": 1
+    }
+  }
+}

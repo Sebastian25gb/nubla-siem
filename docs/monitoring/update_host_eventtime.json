@@ -1,0 +1,14 @@
+{
+  "query": {
+    "bool": {
+      "must": [
+        { "exists": { "field": "message" } },
+        { "bool": { "must_not": { "exists": { "field": "host" } } } }
+      ]
+    }
+  },
+  "script": {
+    "lang": "painless",
+    "source": "String msg = params._source.message;\nif (msg == null) return;\n// strip leading syslog priority like <185>\nif (msg.length() > 0 && msg.charAt(0) == '<') {\n  int gt = msg.indexOf('>');\n  if (gt >= 0) msg = msg.substring(gt + 1);\n}\n// try devname=\"...\"\nint idx = msg.indexOf(\"devname=\");\nif (idx >= 0) {\n  int q1 = msg.indexOf('\"', idx);\n  if (q1 >= 0) {\n    int q2 = msg.indexOf('\"', q1 + 1);\n    if (q2 > q1) {\n      String host = msg.substring(q1 + 1, q2);\n      ctx._source.host = host;\n      ctx._source.host_name = host;\n    }\n  }\n} else {\n  // try devid=... (no quotes)\n  idx = msg.indexOf(\"devid=\");\n  if (idx >= 0) {\n    int eq = idx + 6;\n    int end = msg.indexOf(' ', eq);\n    if (end < 0) end = msg.length();\n    String host = msg.substring(eq, end);\n    if (host.length() > 1 && host.charAt(0) == '\"' && host.charAt(host.length()-1) == '\"') {\n      host = host.substring(1, host.length()-1);\n    }\n    ctx._source.host = host;\n    ctx._source.host_name = host;\n  }\n}\n// extract eventtime= (nanoseconds) -> set @timestamp\nint et = msg.indexOf(\"eventtime=\");\nif (et >= 0) {\n  int s = et + 10;\n  int e = s;\n  while (e < msg.length() && Character.isDigit(msg.charAt(e))) e++;\n  String ns = msg.substring(s, e);\n  try {\n    long nsL = Long.parseLong(ns);\n    long ms = nsL / 1000000L;\n    ctx._source['@timestamp'] = java.time.Instant.ofEpochMilli(ms).toString();\n  } catch (Exception ex) {\n    // ignore parse errors\n  }\n}\n"
+  }
+}

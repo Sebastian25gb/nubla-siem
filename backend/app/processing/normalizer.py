@@ -1,66 +1,115 @@
+#!/usr/bin/env python3
+"""
+Normalizador Fortinet mejorado.
+
+- Elimina prefijo syslog "<PRI>" si existe.
+- Extrae key=value (soporta quoted values).
+- Soporta eventtime (epoch en ns) -> @timestamp ISO.
+- Extrae devname/devid -> host, host_name.
+- Extrae msg -> message (si existe) y srcip/dstip -> source/destination.ip.
+- Guarda copia original en original.message_raw y original.raw_kv.
+"""
 import re
-import shlex
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Dict
 
-from domain.schemas import LogEvent
+KV_RE = re.compile(r'(\w+)=(".*?"|[^"\s]+)')
+PRI_RE = re.compile(r'^<\d+>')
 
-PRI_PREFIX = re.compile(r"^<\d+>\s*")
+def parse_kv(s: str) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for m in KV_RE.finditer(s):
+        k = m.group(1)
+        v = m.group(2)
+        if v.startswith('"') and v.endswith('"'):
+            v = v[1:-1]
+        out[k] = v
+    return out
 
-def _parse_kv_message(msg: str) -> dict:
-    """
-    Parsea mensajes Fortinet estilo key=value con comillas.
-    Ej: date=2025-11-03 time=19:15:32 devname="X" severity="critical" ...
-    """
-    # Quita prefijo PRI de syslog si viene (<185>)
-    msg = PRI_PREFIX.sub("", msg)
-    # Divide respetando comillas
-    parts = shlex.split(msg)
-    kv = {}
-    for p in parts:
-        if "=" in p:
-            k, v = p.split("=", 1)
-            kv[k] = v
-    return kv
-
-def _parse_timestamp(kv: dict) -> Optional[datetime]:
-    # Intenta construir timestamp con date + time + tz (si existe)
+def ns_epoch_to_iso(ns_str: str) -> str:
     try:
-        date = kv.get("date")
-        time_ = kv.get("time")
-        tz = kv.get("tz", "+0000").strip('"')
-        if date and time_:
-            # tz esperado como +HHMM o -HHMM; si no existe, se usa +0000
-            return datetime.strptime(f"{date} {time_} {tz}", "%Y-%m-%d %H:%M:%S %z")
+        ns = int(ns_str)
+        ms = ns // 1_000_000
+        dt = datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
+        return dt.isoformat()
     except Exception:
-        pass
-    # Fortinet también envía eventtime con epoch en ns/us; lo omitimos por ahora
-    return None
+        return datetime.now(timezone.utc).isoformat()
 
-def normalize(raw: dict) -> LogEvent:
-    """
-    - Si 'message' contiene Fortinet key=value, se parsea y se intentan mapear campos.
-    - En otros casos, se conserva el message original.
-    """
-    message = raw.get("message") or raw.get("msg") or ""
-    host = raw.get("host") or raw.get("hostname")
-    facility = raw.get("facility")
-    severity = raw.get("severity")
-    tenant_id = raw.get("tenant_id") or "default"
+def strip_pri(s: str) -> str:
+    return PRI_RE.sub('', s, count=1)
 
-    # Intento de parse Fortinet
-    kv = {}
-    if "=" in message:
-        kv = _parse_kv_message(message)
-        # Mapear algunos campos comunes
-        host = host or kv.get("devname")
-        severity = severity or kv.get("severity")
-        # Si Fortinet lleva un msg=... propio, prefierelo
-        message = kv.get("msg") or kv.get("message") or message
+def normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
+    # Passthrough si no es dict o no contiene "message"
+    if not isinstance(raw, dict):
+        return raw
+    msg_raw = raw.get("message")
+    if not isinstance(msg_raw, str):
+        return raw
 
-    ts = _parse_timestamp(kv) if kv else None
+    out: Dict[str, Any] = {}
+    out["original"] = out.get("original", {})
+    out["original"]["message_raw"] = msg_raw
 
-    if ts:
-        return LogEvent(timestamp=ts, message=message, host=host, facility=facility, severity=severity, tenant_id=tenant_id)
+    cleaned = strip_pri(msg_raw).strip()
+    kv = parse_kv(cleaned)
+    out["original"]["raw_kv"] = kv
+
+    out["tenant_id"] = raw.get("tenant_id", "default")
+    out["dataset"] = raw.get("dataset", "syslog.generic")
+    out["schema_version"] = raw.get("schema_version", "1.0.0")
+
+    # timestamp
+    ts = None
+    if "eventtime" in kv:
+        ts = ns_epoch_to_iso(kv.get("eventtime"))
     else:
-        return LogEvent(message=message, host=host, facility=facility, severity=severity, tenant_id=tenant_id)
+        date = kv.get("date")
+        timev = kv.get("time")
+        tz = kv.get("tz")
+        if date and timev:
+            try:
+                if tz and re.match(r'^[+-]\d{4}$', tz):
+                    tz = tz[:3] + ":" + tz[3:]
+                if tz:
+                    ts = f"{date}T{timev}{tz}"
+                else:
+                    ts = f"{date}T{timev}Z"
+            except Exception:
+                ts = None
+    if ts is None:
+        ts = raw.get("@timestamp") or raw.get("timestamp") or datetime.now(timezone.utc).isoformat()
+    out["@timestamp"] = ts
+
+    # message text
+    if "msg" in kv:
+        out["message"] = kv.get("msg")
+    else:
+        out["message"] = cleaned
+
+    # severity
+    severity = raw.get("severity")
+    if not severity:
+        severity = kv.get("severity") or kv.get("level") or kv.get("crlevel")
+    out["severity"] = str(severity).lower() if severity else "info"
+
+    # host detection
+    host = raw.get("host") or kv.get("devname") or kv.get("devid")
+    if host:
+        out["host"] = host
+        out["host_name"] = host
+
+    # network addresses
+    if "srcip" in kv:
+        out.setdefault("source", {})["ip"] = kv.get("srcip")
+    if "dstip" in kv:
+        out.setdefault("destination", {})["ip"] = kv.get("dstip")
+
+    # useful labels
+    labels = {}
+    for k in ("attack","policyid","service","proto"):
+        if k in kv:
+            labels[k] = kv.get(k)
+    if labels:
+        out["labels"] = labels
+
+    return out
