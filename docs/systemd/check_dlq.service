@@ -1,0 +1,8 @@
+[Unit]
+Description=Check RabbitMQ DLQ
+
+[Service]
+Type=oneshot
+Environment=RABBIT_USER=admin
+Environment=RABBIT_PASS=securepass
+ExecStart=/root/nubla-siem/scripts/check_dlq.sh
