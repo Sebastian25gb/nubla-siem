@@ -71,6 +71,7 @@ services:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
       - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - OPENSEARCH_JAVA_OPTS=-Dpath.repo=/usr/share/opensearch/snapshots
       # Dev: security disabled for quick local testing. Enable security/TLS for staging/prod.
       - "plugins.security.disabled=true"
     ulimits:
@@ -85,6 +86,7 @@ services:
       timeout: 5s
       retries: 10
     volumes:
+      - /tmp/es_snapshots:/usr/share/opensearch/snapshots:rw
       - opensearch_data:/usr/share/opensearch/data
   metrics-exporter:
     build:
