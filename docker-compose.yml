@@ -15,6 +15,22 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
 
+  rabbitmq-init:
+      image: curlimages/curl:8.3.0
+      depends_on:
+        rabbitmq:
+          condition: service_started
+      volumes:
+        - ./rabbitmq:/defs:ro
+        - ./scripts/rabbitmq:/scripts:ro
+      environment:
+        RABBITMQ_HOST: rabbitmq
+        RABBITMQ_MGMT_PORT: 15672
+        RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+        RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-securepass}
+      entrypoint: ["/bin/sh","-c"]
+      command: "/scripts/load_definitions.sh"
+      restart: "no"
   fluentd:
     build:
       context: ./ingestion
@@ -84,10 +100,11 @@ services:
     depends_on:
       - opensearch
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9108/metrics || exit 1"]
-      interval: 10s
+      test: ["CMD-SHELL", "python - <<'PY'\nimport sys\nimport urllib.request\ntry:\n    r = urllib.request.urlopen('http://localhost:9108/metrics', timeout=5)\n    d = r.read(8192).decode('utf-8')\n    if '# HELP nubla_logs_docs_total' in d:\n        sys.exit(0)\n    else:\n        sys.exit(2)\nexcept Exception:\n    sys.exit(1)\nPY"]
+      interval: 15s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   backend-api:
     build:

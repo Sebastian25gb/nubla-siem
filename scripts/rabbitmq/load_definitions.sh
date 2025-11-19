@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 HOST="${RABBITMQ_HOST:-rabbitmq}"
 PORT="${RABBITMQ_MGMT_PORT:-15672}"
@@ -10,13 +10,15 @@ MAX_RETRIES=60
 SLEEP=2
 
 echo "Waiting for RabbitMQ management API at http://$HOST:$PORT ..."
-for i in $(seq 1 $MAX_RETRIES); do
+i=1
+while [ "$i" -le "$MAX_RETRIES" ]; do
   if curl -sS -u "$USER:$PASS" "http://$HOST:$PORT/api/healthchecks/node" >/dev/null 2>&1; then
     echo "RabbitMQ management API reachable."
     break
   fi
   echo "Waiting... ($i/$MAX_RETRIES)"
-  sleep $SLEEP
+  i=$((i + 1))
+  sleep "$SLEEP"
 done
 
 if [ ! -f "$DEFINITIONS_PATH" ]; then
