@@ -7,7 +7,11 @@ from backend.app.core.config import settings
 logger = logging.getLogger(__name__)
 
 def _normalize_url(raw: Optional[str]) -> str:
-    fallback = "http://127.0.0.1:9201"
+    """
+    Normaliza un host o URL a un endpoint http://host:port
+    Fallback por defecto a opensearch en red de docker-compose.
+    """
+    fallback = "http://opensearch:9200"
     raw = (raw or "").strip()
     if not raw:
         return fallback
@@ -18,6 +22,9 @@ def _normalize_url(raw: Optional[str]) -> str:
     return f"http://{raw}:9200"
 
 def _get_auth() -> Tuple[Optional[str], Optional[str]]:
+    """
+    Se soportan OS_USER/OS_PASS. (ES_USER/ES_PASS quedan deprecadas pero se leen si existen)
+    """
     user = os.getenv("OS_USER") or os.getenv("ES_USER")
     pwd  = os.getenv("OS_PASS") or os.getenv("ES_PASS")
     if user and pwd:
@@ -25,37 +32,23 @@ def _get_auth() -> Tuple[Optional[str], Optional[str]]:
     return None, None  # sin auth por defecto
 
 def get_es():
-    raw = os.getenv("ELASTICSEARCH_HOST", getattr(settings, "elasticsearch_host", None))
+    """
+    Retorna cliente OpenSearch. (Nombre legado por compatibilidad de imports)
+    """
+    raw = os.getenv("OPENSEARCH_HOST") or getattr(settings, "opensearch_host", None) \
+          or os.getenv("ELASTICSEARCH_HOST") or getattr(settings, "elasticsearch_host", None)
     url = _normalize_url(raw)
     user, pwd = _get_auth()
 
-    # OpenSearch
-    try:
-        from opensearchpy import OpenSearch  # type: ignore
-        kwargs = {"hosts":[url], "timeout":30}
-        if user and pwd:
-            kwargs["http_auth"] = (user, pwd)
-        client = OpenSearch(**kwargs)
-        client.info()
-        logger.info("using_opensearch_client", extra={"url": url})
-        return client
-    except Exception as e:
-        logger.info("opensearch_client_unavailable", extra={"error": str(e)}, exc_info=True)
-
-    # Elasticsearch
-    try:
-        from elasticsearch import Elasticsearch  # type: ignore
-        kwargs = {"hosts":[url], "request_timeout":30}
-        if user and pwd:
-            kwargs["basic_auth"] = (user, pwd)
-        client = Elasticsearch(**kwargs)
-        client.info()
-        logger.info("using_elasticsearch_client", extra={"url": url})
-        return client
-    except Exception as e:
-        logger.info("elasticsearch_client_unavailable", extra={"error": str(e)}, exc_info=True)
-
-    raise RuntimeError("No search client installed.")
+    from opensearchpy import OpenSearch  # type: ignore
+    kwargs: Dict[str, Any] = {"hosts": [url], "timeout": 30}
+    if user and pwd:
+        kwargs["http_auth"] = (user, pwd)
+    client = OpenSearch(**kwargs)
+    # touch connection
+    client.info()
+    logger.info("using_opensearch_client", extra={"url": url})
+    return client
 
 def index_event(
     es_client,
@@ -78,10 +71,8 @@ def index_event(
         params["pipeline"] = pipeline
 
     try:
-        try:
-            return es_client.index(index=index, body=body, params=params)
-        except TypeError:
-            return es_client.index(index=index, document=body, params=params)
+        # opensearch-py acepta 'body='
+        return es_client.index(index=index, body=body, params=params)
     except Exception as e:
-        logger.exception("es_index_failed", extra={"index": index, "error": str(e)})
+        logger.exception("os_index_failed", extra={"index": index, "error": str(e)})
         raise

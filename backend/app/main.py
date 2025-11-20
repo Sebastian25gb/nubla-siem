@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 
-from core.logging import configure_logging
+# Import absoluto dentro del paquete para evitar ModuleNotFoundError
+from backend.app.core.logging import configure_logging
 
 app = FastAPI(title="Nubla SIEM API")
 configure_logging()
