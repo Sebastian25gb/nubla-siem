@@ -1,0 +1,19 @@
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.ruff]
+line-length = 100
+select = ["E","F","I"]
+exclude = ["backend/app/schema"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+markers = [
+  "integration: tests de integración (requieren servicios externos)",
+  "unit: tests unitarios rápidos"
+]

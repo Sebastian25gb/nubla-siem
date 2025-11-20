@@ -81,20 +81,25 @@ def normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     out["message"] = kv.get("msg") or cleaned
 
+    # Severidad: conserva original y normaliza a minúsculas para schema/queries
     sev_in = raw.get("severity") or kv.get("severity") or kv.get("level") or kv.get("crlevel") or "info"
-    out["severity_original"] = str(sev_in)
-    out["severity"] = sev_in
+    sev_str = str(sev_in)
+    out["severity_original"] = sev_str
+    out["severity"] = sev_str.lower()
 
+    # Host
     host = raw.get("host") or kv.get("devname") or kv.get("devid")
     if host:
         out["host"] = host
         out["host_name"] = host
 
+    # IPs
     if "srcip" in kv:
         out.setdefault("source", {})["ip"] = kv.get("srcip")
     if "dstip" in kv:
         out.setdefault("destination", {})["ip"] = kv.get("dstip")
 
+    # Puertos -> int
     sp = to_int_safe(kv.get("srcport"))
     if sp is not None:
         out.setdefault("source", {})["port"] = sp
@@ -102,9 +107,11 @@ def normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
     if dp is not None:
         out.setdefault("destination", {})["port"] = dp
 
+    # Protocolo
     if "proto" in kv:
         out.setdefault("network", {})["protocol"] = kv.get("proto")
 
+    # Threat / Policy / Score / Action
     if "attack" in kv:
         out.setdefault("threat", {})["name"] = kv.get("attack")
     if "attackid" in kv:
@@ -118,21 +125,25 @@ def normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
     if "policyid" in kv:
         out.setdefault("rule", {})["id"] = kv.get("policyid")
 
+    # Count
     cnt = to_int_safe(kv.get("count"))
     if cnt is not None:
         out.setdefault("event", {})["count"] = cnt
 
+    # PPS (regex sobre mensaje)
     pps_match = PPS_RE.search(cleaned)
     if pps_match:
         pps_val = to_int_safe(pps_match.group(1))
         if pps_val is not None:
             out.setdefault("flow", {})["packets_per_second"] = pps_val
 
+    # Countries (simplificación)
     if "srccountry" in kv:
         out.setdefault("source", {}).setdefault("geo", {})["country_iso_code"] = kv.get("srccountry").strip().upper().replace(" ", "_")
     if "dstcountry" in kv:
         out.setdefault("destination", {}).setdefault("geo", {})["country_iso_code"] = kv.get("dstcountry").strip().upper().replace(" ", "_")
 
+    # Labels (subset)
     labels = {}
     for k in ("service", "proto"):
         if k in kv:
