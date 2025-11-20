@@ -1,61 +1,34 @@
 {
+  "users": [
+    {
+      "name": "admin",
+      "password_hash": "<<HASH_OR_PASSWORD>>",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": "administrator"
+    }
+  ],
   "vhosts": [
     { "name": "/" }
   ],
-  "exchanges": [
+  "permissions": [
     {
-      "name": "logs_default",
+      "user": "admin",
       "vhost": "/",
-      "type": "topic",
-      "durable": true,
-      "auto_delete": false,
-      "internal": false,
-      "arguments": {}
-    },
-    {
-      "name": "logs_default.dlx",
-      "vhost": "/",
-      "type": "topic",
-      "durable": true,
-      "auto_delete": false,
-      "internal": false,
-      "arguments": {}
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
     }
+  ],
+  "exchanges": [
+    { "name": "logs_default", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
+    { "name": "logs_default.dlx", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {} }
   ],
   "queues": [
-    {
-      "name": "nubla_logs_default",
-      "vhost": "/",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-dead-letter-exchange": "logs_default.dlx"
-      }
-    },
-    {
-      "name": "nubla_logs_default.dlq",
-      "vhost": "/",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {}
-    }
+    { "name": "nubla_logs_default", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-dead-letter-exchange": "logs_default.dlx" } },
+    { "name": "nubla_logs_default.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} }
   ],
   "bindings": [
-    {
-      "vhost": "/",
-      "source": "logs_default",
-      "destination": "nubla_logs_default",
-      "destination_type": "queue",
-      "routing_key": "nubla.log.default",
-      "arguments": {}
-    },
-    {
-      "vhost": "/",
-      "source": "logs_default.dlx",
-      "destination": "nubla_logs_default.dlq",
-      "destination_type": "queue",
-      "routing_key": "#",
-      "arguments": {}
-    }
+    { "source": "logs_default", "vhost": "/", "destination": "nubla_logs_default", "destination_type": "queue", "routing_key": "nubla.log.default", "arguments": {} },
+    { "source": "logs_default.dlx", "vhost": "/", "destination": "nubla_logs_default.dlq", "destination_type": "queue", "routing_key": "#", "arguments": {} }
   ]
 }

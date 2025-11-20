@@ -1,15 +1,31 @@
 {
-  "description": "Nubla logs ingest pipeline (normalize severity, set defaults if missing)",
+  "description": "Nubla logs ingest pipeline (normalize severity, set defaults, cleanup timestamp)",
   "processors": [
     {
       "lowercase": {
         "field": "severity",
         "ignore_missing": true
       }
+    },
+    {
+      "set": {
+        "field": "schema_version",
+        "value": "1.0.0",
+        "override": false
+      }
+    },
+    {
+      "set": {
+        "field": "dataset",
+        "value": "syslog.generic",
+        "override": false
+      }
+    },
+    {
+      "remove": {
+        "field": "timestamp",
+        "ignore_missing": true
+      }
     }
-  ],
-  "_meta": {
-    "owner": "nublas",
-    "version": 1
-  }
+  ]
 }

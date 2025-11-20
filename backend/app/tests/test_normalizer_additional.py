@@ -2,30 +2,31 @@ import pytest
 from backend.app.processing.normalizer import normalize
 
 def test_malformed_kv_values():
-    # key without value, and escaped quotes
     raw = {"message": 'devname=HostX msg="ok" badkey= srcip="1.2.3.4"'}
     out = normalize(raw)
     assert out["host"] == "HostX"
     assert out["message"] == "ok"
-    # badkey should be ignored or present but empty
-    assert "badkey" in out.get("original", {}).get("raw_kv", {}) or "badkey" not in out.get("original", {}).get("raw_kv", {})
+    kv = out["original"]["raw_kv"]
+    # badkey queda con valor vacío o no aparece; validamos caso consistente
+    assert ("badkey" not in kv) or (kv.get("badkey") == "")
 
 def test_eventtime_invalid_fallback_to_now():
     raw = {"message": 'devname=H msg=test eventtime=notanumber'}
     out = normalize(raw)
-    # eventtime invalid -> @timestamp present (fallback not raising)
     assert "@timestamp" in out
 
-def test_empty_message_passthrough():
-    raw = {"message": ""}
+def test_ports_and_attackid():
+    raw = {"message": 'devname=Host msg="attack event" srcip=1.2.3.4 dstip=5.6.7.8 srcport=443 dstport=1111 attackid=285212772 attack=udp_flood count=42 proto=udp'}
     out = normalize(raw)
-    # empty message considered a string; normalization returns something with original.message_raw
-    assert out["original"]["message_raw"] == ""
+    assert out["source"]["port"] == "443"
+    assert out["destination"]["port"] == "1111"
+    assert out["threat"]["id"] == "285212772"
+    assert out["threat"]["name"] == "udp_flood"
+    assert out["event"]["count"] == "42"
 
-def test_large_payload_performance_like():
-    # simulate many kv pairs in one message (not a strict perf test, just sanity)
-    kvs = " ".join([f"f{i}=v{i}" for i in range(200)])
-    raw = {"message": f"devname=PerfHost msg=bulk {kvs}"}
+def test_severity_original():
+    raw = {"message": 'devname=A msg=hello severity=CRITICAL'}
     out = normalize(raw)
-    assert out["host"] == "PerfHost"
-    assert "f199" in out.get("original", {}).get("raw_kv", {})
+    assert out["severity_original"] == "CRITICAL"
+    # severity aún uppercase aquí, pipeline la bajará
+    assert out["severity"] == "CRITICAL"

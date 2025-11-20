@@ -1,6 +1,6 @@
 {
   "index_patterns": ["logs-default-*", "logs-*"],
-  "priority": 50,
+  "priority": 700,
   "template": {
     "settings": {
       "number_of_shards": 1
@@ -20,40 +20,67 @@
         "schema_version": { "type": "keyword" },
         "dataset": { "type": "keyword" },
         "severity": { "type": "keyword" },
-        "host": {
-          "type": "text",
-          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
-        },
-        "host_name": {
-          "type": "text",
-          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
-        },
+        "severity_original": { "type": "keyword" },
+        "host": { "type": "keyword" },
+        "host_name": { "type": "keyword" },
         "message": { "type": "text" },
         "@timestamp": { "type": "date" },
         "source": {
           "properties": {
             "ip": { "type": "ip" },
             "port": { "type": "integer" },
-            "host": { "type": "keyword" }
+            "geo": {
+              "properties": {
+                "country_iso_code": { "type": "keyword" }
+              }
+            }
           }
         },
         "destination": {
           "properties": {
             "ip": { "type": "ip" },
             "port": { "type": "integer" },
-            "host": { "type": "keyword" }
+            "geo": {
+              "properties": {
+                "country_iso_code": { "type": "keyword" }
+              }
+            }
           }
         },
-        "user": {
+        "network": {
           "properties": {
-            "id": { "type": "keyword" },
-            "name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
-            "email": { "type": "keyword" }
+            "protocol": { "type": "keyword" }
           }
         },
+        "threat": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "id": { "type": "keyword" },
+            "score": { "type": "integer" },
+            "action": { "type": "keyword" }
+          }
+        },
+        "rule": {
+          "properties": {
+            "id": { "type": "keyword" }
+          }
+        },
+        "event": {
+          "properties": {
+            "count": { "type": "long" }
+          }
+        },
+        "flow": {
+          "properties": {
+            "packets_per_second": { "type": "long" }
+          }
+        },
+        "labels": { "type": "object" },
         "original": {
-          "type": "object",
-          "enabled": true
+          "properties": {
+            "message_raw": { "type": "text" },
+            "raw_kv": { "type": "object", "enabled": true }
+          }
         }
       }
     }

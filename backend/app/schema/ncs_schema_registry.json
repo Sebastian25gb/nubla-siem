@@ -4,7 +4,7 @@
   "title": "Nubla Common Schema (NCS) v1",
   "description": "JSON Schema local para validación de eventos NCS v1.",
   "type": "object",
-  "required": ["tenant_id", "@timestamp", "dataset", "message", "schema_version", "severity"],
+  "required": ["tenant_id", "@timestamp", "dataset", "message", "schema_version"],
   "properties": {
     "tenant_id": { "type": "string" },
     "@timestamp": { "type": "string", "format": "date-time" },

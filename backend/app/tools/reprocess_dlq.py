@@ -1,54 +1,44 @@
 #!/usr/bin/env python3
 """
-Reprocess DLQ with normalization and quarantine handling.
-
-Features:
-- Uses processing.normalizer.normalize if available to convert raw messages into structured events.
-- Ensures tenant_id default when missing.
-- Supports dry-run (--dry-run) to preview transformations without publishing.
-- Supports quarantine queue for non-JSON or unfixable messages (--quarantine).
-- CLI flags for RabbitMQ connection and behavior.
-
-Usage examples:
-  # Dry-run 20 messages:
-  python backend/app/tools/reprocess_dlq.py --host localhost --port 5672 --user admin --password securepass \
-    --vhost / --dlq logs_siem.dlq --exchange logs_default --routing-key nubla.log.default --limit 20 --dry-run --verbose
-
-  # Real reprocess 200 messages with quarantine enabled:
-  python backend/app/tools/reprocess_dlq.py --host localhost --port 5672 --user admin --password securepass \
-    --vhost / --dlq logs_siem.dlq --exchange logs_default --routing-key nubla.log.default --limit 200 --severity-default info --quarantine logs_siem.quarantine
+Reprocess DLQ with normalization and optional reject reason annotation.
+Defaults updated to nubla_logs_default.dlq.
 """
 from __future__ import annotations
-
 import argparse
 import json
 import os
 import time
 from typing import Any, Dict, Optional
-
 import pika
 
-# Try to import normalize; fallback to identity
+# Normalizador: intentar fully-qualified y relativo; fallback passthrough
 try:
-    from processing.normalizer import normalize  # type: ignore
+    from backend.app.processing.normalizer import normalize  # type: ignore
 except Exception:
-    def normalize(x: Dict[str, Any]) -> Dict[str, Any]:  # type: ignore
-        return x
+    try:
+        from processing.normalizer import normalize  # type: ignore
+    except Exception:
+        def normalize(x: Dict[str, Any]) -> Dict[str, Any]:
+            return x
 
 def fix_event(evt: Dict[str, Any], severity_default: str) -> Dict[str, Any]:
-    # Ensure minimal fields; prefer existing keys
-    out = dict(evt)  # shallow copy
+    out = dict(evt)
     if out.get("severity") in (None, "", "null"):
         out["severity"] = severity_default
     out.setdefault("dataset", "syslog.generic")
     out.setdefault("schema_version", "1.0.0")
-    # ensure @timestamp fallback
     if "@timestamp" not in out and "timestamp" in out:
         out["@timestamp"] = out["timestamp"]
     return out
 
-def publish_event(ch: pika.adapters.blocking_connection.BlockingChannel, exchange: str, routing_key: str, body: Dict[str, Any]) -> None:
-    ch.basic_publish(exchange=exchange, routing_key=routing_key, body=json.dumps(body, ensure_ascii=False).encode("utf-8"))
+def publish_event(ch, exchange: str, routing_key: str, body: Dict[str, Any], reason: Optional[str] = None) -> None:
+    props = None
+    if reason:
+        try:
+            props = pika.BasicProperties(headers={"x-reprocess-reason": reason})
+        except Exception:
+            pass
+    ch.basic_publish(exchange=exchange, routing_key=routing_key, body=json.dumps(body, ensure_ascii=False).encode("utf-8"), properties=props)
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Reprocess messages from DLQ and republish to main exchange with normalization.")
@@ -57,15 +47,16 @@ def main() -> None:
     p.add_argument("--user", default=os.getenv("RABBITMQ_USER", "admin"))
     p.add_argument("--password", default=os.getenv("RABBITMQ_PASSWORD", "securepass"))
     p.add_argument("--vhost", default=os.getenv("RABBITMQ_VHOST", "/"))
-    p.add_argument("--dlq", default=os.getenv("RABBITMQ_DLQ_QUEUE", "logs_siem.dlq"))
+    p.add_argument("--dlq", default=os.getenv("RABBITMQ_DLQ", "nubla_logs_default.dlq"))
     p.add_argument("--exchange", default=os.getenv("RABBITMQ_EXCHANGE", "logs_default"))
     p.add_argument("--routing-key", default=os.getenv("RABBITMQ_ROUTING_KEY", "nubla.log.default"))
     p.add_argument("--limit", type=int, default=100)
-    p.add_argument("--sleep", type=float, default=0.0, help="Sleep seconds between messages")
-    p.add_argument("--dry-run", action="store_true", help="Only show transformations; do NOT publish/ack")
-    p.add_argument("--severity-default", default="info", help="Default severity when missing")
-    p.add_argument("--verbose", action="store_true", help="Print each processed message summary")
-    p.add_argument("--quarantine", default="", help="If set, non-JSON or invalid messages are republished to this queue instead of acking")
+    p.add_argument("--sleep", type=float, default=0.0)
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--severity-default", default="info")
+    p.add_argument("--verbose", action="store_true")
+    p.add_argument("--quarantine", default="")
+    p.add_argument("--reject-reason-field", default="dlq_reprocess")
     args = p.parse_args()
 
     credentials = pika.PlainCredentials(args.user, args.password)
@@ -95,7 +86,6 @@ def main() -> None:
         try:
             evt = json.loads(raw)
         except Exception:
-            # non-JSON payload -> quarantine or ack depending on flags
             invalid_json += 1
             if args.quarantine:
                 if not args.dry_run:
@@ -103,11 +93,9 @@ def main() -> None:
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                     quarantined += 1
                 else:
-                    # dry-run: put message back
                     ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
                     requeued_dry += 1
             else:
-                # If no quarantine specified: in dry-run requeue, else ack (drop)
                 if args.dry_run:
                     ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
                     requeued_dry += 1
@@ -120,50 +108,43 @@ def main() -> None:
                 time.sleep(args.sleep)
             continue
 
-        # Normalize first (gives structured event)
         try:
             structured = normalize(evt)
         except Exception:
-            # fallback to fix_event
             structured = fix_event(evt, args.severity_default)
 
-        # Ensure tenant_id default if absent
         if structured.get("tenant_id") in (None, ""):
             structured["tenant_id"] = "default"
-
-        # Ensure minimal fields
         structured = fix_event(structured, args.severity_default)
 
+        # Marca el evento reprocesado con un campo booleano configurable (por defecto: dlq_reprocess)
+        structured[args.reject_reason_field] = True  # <= FIX: usar atributo con guion convertido a subrayado
+
         if args.dry_run:
-            # show what would be published
             requeued_dry += 1
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
             if args.verbose:
                 print(json.dumps({
                     "seq": i+1,
                     "tenant_id": structured.get("tenant_id"),
-                    "severity_before": evt.get("severity"),
                     "severity_after": structured.get("severity"),
                     "published": False,
                     "preview": {k: structured.get(k) for k in ("host","@timestamp","message")}
                 }, ensure_ascii=False))
         else:
-            # publish to exchange and ack dlq message
             try:
-                publish_event(ch, args.exchange, args.routing_key, structured)
+                publish_event(ch, args.exchange, args.routing_key, structured, reason="dlq_reprocess")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 published += 1
                 if args.verbose:
                     print(json.dumps({
                         "seq": i+1,
                         "tenant_id": structured.get("tenant_id"),
-                        "severity_before": evt.get("severity"),
                         "severity_after": structured.get("severity"),
                         "published": True,
                         "preview": {k: structured.get(k) for k in ("host","@timestamp","message")}
                     }, ensure_ascii=False))
             except Exception as e:
-                # on publish failure, don't ack; requeue so it can be retried later
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
                 if args.verbose:
                     print(json.dumps({"seq": i+1, "error": str(e)}))
@@ -172,7 +153,6 @@ def main() -> None:
             time.sleep(args.sleep)
 
     conn.close()
-
     print(json.dumps({
         "summary": {
             "processed": processed,
