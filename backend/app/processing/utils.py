@@ -1,6 +1,6 @@
-import json
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
+
 
 def to_iso8601(value: Any) -> Any:
     if isinstance(value, datetime):
@@ -9,12 +9,14 @@ def to_iso8601(value: Any) -> Any:
         return value.isoformat()
     return value
 
+
 def coerce_datetimes(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {k: coerce_datetimes(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [coerce_datetimes(v) for v in obj]
     return to_iso8601(obj)
+
 
 def prepare_event(evt: Dict[str, Any]) -> Dict[str, Any]:
     # Garantiza mínimos, normaliza datetimes
@@ -24,6 +26,7 @@ def prepare_event(evt: Dict[str, Any]) -> Dict[str, Any]:
     evt.setdefault("dataset", "syslog.generic")
     evt.setdefault("schema_version", "1.0.0")
     return evt
+
 
 def top_validation_errors(errors, limit: int = 5) -> List[str]:
     msgs: List[str] = []

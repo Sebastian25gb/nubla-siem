@@ -1,6 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
+
 from backend.app.main import app  # Ajustar import si main.py está en backend/app/main.py
+
 
 @pytest.mark.unit
 def test_health_endpoint():

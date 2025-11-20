@@ -1,10 +1,11 @@
 import logging
 import os
-from typing import Optional, Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from backend.app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
 
 def _normalize_url(raw: Optional[str]) -> str:
     """
@@ -21,26 +22,33 @@ def _normalize_url(raw: Optional[str]) -> str:
         return f"http://{raw}"
     return f"http://{raw}:9200"
 
+
 def _get_auth() -> Tuple[Optional[str], Optional[str]]:
     """
     Se soportan OS_USER/OS_PASS. (ES_USER/ES_PASS quedan deprecadas pero se leen si existen)
     """
     user = os.getenv("OS_USER") or os.getenv("ES_USER")
-    pwd  = os.getenv("OS_PASS") or os.getenv("ES_PASS")
+    pwd = os.getenv("OS_PASS") or os.getenv("ES_PASS")
     if user and pwd:
         return user, pwd
     return None, None  # sin auth por defecto
+
 
 def get_es():
     """
     Retorna cliente OpenSearch. (Nombre legado por compatibilidad de imports)
     """
-    raw = os.getenv("OPENSEARCH_HOST") or getattr(settings, "opensearch_host", None) \
-          or os.getenv("ELASTICSEARCH_HOST") or getattr(settings, "elasticsearch_host", None)
+    raw = (
+        os.getenv("OPENSEARCH_HOST")
+        or getattr(settings, "opensearch_host", None)
+        or os.getenv("ELASTICSEARCH_HOST")
+        or getattr(settings, "elasticsearch_host", None)
+    )
     url = _normalize_url(raw)
     user, pwd = _get_auth()
 
     from opensearchpy import OpenSearch  # type: ignore
+
     kwargs: Dict[str, Any] = {"hosts": [url], "timeout": 30}
     if user and pwd:
         kwargs["http_auth"] = (user, pwd)
@@ -48,6 +56,7 @@ def get_es():
     client.info()
     logger.info("using_opensearch_client", extra={"url": url})
     return client
+
 
 def index_event(
     es_client,

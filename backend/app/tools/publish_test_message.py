@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime, timezone
+
 import pika
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
@@ -11,6 +12,7 @@ RABBITMQ_VHOST = os.getenv("RABBITMQ_VHOST", "/")
 RABBITMQ_EXCHANGE = os.getenv("RABBITMQ_EXCHANGE", "logs_default")
 RABBITMQ_ROUTING_KEY = os.getenv("RABBITMQ_ROUTING_KEY", "nubla.log.default")
 RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "nubla_logs_default")
+
 
 def publish(body: dict, use_exchange: bool = True):
     credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
@@ -23,10 +25,17 @@ def publish(body: dict, use_exchange: bool = True):
     conn = pika.BlockingConnection(params)
     ch = conn.channel()
     if use_exchange:
-        ch.basic_publish(exchange=RABBITMQ_EXCHANGE, routing_key=RABBITMQ_ROUTING_KEY, body=json.dumps(body).encode("utf-8"))
+        ch.basic_publish(
+            exchange=RABBITMQ_EXCHANGE,
+            routing_key=RABBITMQ_ROUTING_KEY,
+            body=json.dumps(body).encode("utf-8"),
+        )
     else:
-        ch.basic_publish(exchange="", routing_key=RABBITMQ_QUEUE, body=json.dumps(body).encode("utf-8"))
+        ch.basic_publish(
+            exchange="", routing_key=RABBITMQ_QUEUE, body=json.dumps(body).encode("utf-8")
+        )
     conn.close()
+
 
 def main():
     print("Publishing valid event...")
@@ -38,19 +47,16 @@ def main():
         "severity": "info",
         "message": "valid event",
         "source": {"ip": "1.1.1.1"},
-        "host": "demo-host"
+        "host": "demo-host",
     }
     publish(valid_event, use_exchange=True)
 
     print("Publishing invalid event...")
-    invalid_event = {
-        "tenant_id": "default",
-        "message": "invalid event",
-        "severity": None
-    }
+    invalid_event = {"tenant_id": "default", "message": "invalid event", "severity": None}
     publish(invalid_event, use_exchange=True)
 
     print("Done.")
+
 
 if __name__ == "__main__":
     main()

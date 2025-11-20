@@ -1,18 +1,17 @@
 import json
 import logging
 import os
-import sys
 from typing import Any, Dict, Optional
 
 from jsonschema import Draft7Validator
 from prometheus_client import Counter, start_http_server
 
 from backend.app.core.config import settings
-from backend.app.repository.elastic import get_es, index_event
-from backend.app.processing.utils import prepare_event, top_validation_errors
+from backend.app.core.logging import configure_logging
 from backend.app.infrastructure.rabbitmq import get_channel
 from backend.app.processing.normalizer import normalize
-from backend.app.core.logging import configure_logging
+from backend.app.processing.utils import prepare_event, top_validation_errors
+from backend.app.repository.elastic import get_es, index_event
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +24,11 @@ EVENTS_INDEX_FAILED = Counter("events_index_failed_total", "Index operation fail
 USE_MANUAL_DLX = os.getenv("USE_MANUAL_DLX", "false").lower() == "true"
 MANUAL_DLX_EXCHANGE = os.getenv("RABBITMQ_DLX", "logs_default.dlx")
 
+
 def load_local_schema(path: str) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
 
 def build_validator(local_path: str) -> Optional[Draft7Validator]:
     resolved = local_path
@@ -44,19 +45,19 @@ def build_validator(local_path: str) -> Optional[Draft7Validator]:
         logger.warning("schema_validator_unavailable", extra={"path": resolved}, exc_info=True)
         return None
 
+
 def publish_to_dlx_with_reason(ch, body_bytes: bytes, routing_key: str, reason: str):
     try:
         import pika
+
         props = pika.BasicProperties(headers={"x-reject-reason": reason})
     except Exception:
         props = None
     ch.basic_publish(
-        exchange=MANUAL_DLX_EXCHANGE,
-        routing_key=routing_key,
-        body=body_bytes,
-        properties=props
+        exchange=MANUAL_DLX_EXCHANGE, routing_key=routing_key, body=body_bytes, properties=props
     )
     EVENTS_NACKED.inc()
+
 
 def main() -> None:
     try:
@@ -107,7 +108,9 @@ def main() -> None:
                         },
                     )
                     if USE_MANUAL_DLX:
-                        publish_to_dlx_with_reason(ch, body, method.routing_key, "validation_failed")
+                        publish_to_dlx_with_reason(
+                            ch, body, method.routing_key, "validation_failed"
+                        )
                         ch.basic_ack(delivery_tag=method.delivery_tag)
                     else:
                         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
@@ -116,7 +119,13 @@ def main() -> None:
 
             tenant = evt_dict.get("tenant_id", "default")
             try:
-                index_event(es, index=f"logs-{tenant}", body=evt_dict, pipeline="logs_ingest", ensure_required=False)
+                index_event(
+                    es,
+                    index=f"logs-{tenant}",
+                    body=evt_dict,
+                    pipeline="logs_ingest",
+                    ensure_required=False,
+                )
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 EVENTS_INDEXED.inc()
                 logger.info("event_indexed", extra={"tenant_id": tenant})
@@ -132,7 +141,9 @@ def main() -> None:
         except Exception:
             logger.exception("processing_failed")
             if USE_MANUAL_DLX:
-                publish_to_dlx_with_reason(ch, body, getattr(method, "routing_key", "unknown"), "processing_exception")
+                publish_to_dlx_with_reason(
+                    ch, body, getattr(method, "routing_key", "unknown"), "processing_exception"
+                )
                 try:
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                 except Exception:
@@ -146,7 +157,10 @@ def main() -> None:
 
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=queue_name, on_message_callback=handle, auto_ack=False)
-    logger.info("consumer_started", extra={"queue": queue_name, "exchange": exchange, "manual_dlx": USE_MANUAL_DLX})
+    logger.info(
+        "consumer_started",
+        extra={"queue": queue_name, "exchange": exchange, "manual_dlx": USE_MANUAL_DLX},
+    )
     try:
         channel.start_consuming()
     except KeyboardInterrupt:
@@ -157,6 +171,7 @@ def main() -> None:
         except Exception:
             pass
 
+
 if __name__ == "__main__":
-    configure_logging(level=os.getenv("LOG_LEVEL","INFO"))
+    configure_logging(level=os.getenv("LOG_LEVEL", "INFO"))
     main()

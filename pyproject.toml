@@ -8,8 +8,13 @@ line_length = 100
 
 [tool.ruff]
 line-length = 100
-select = ["E","F","I"]
 exclude = ["backend/app/schema"]
+
+[tool.ruff.lint]
+# Antes estaba en [tool.ruff] select=[...], ahora va en la subsección lint
+select = ["E", "F", "I"]
+# Opcional pero recomendado si usas Black para el ancho de línea
+ignore = ["E501"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

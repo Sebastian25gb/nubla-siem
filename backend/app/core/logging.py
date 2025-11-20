@@ -1,7 +1,9 @@
 import logging
 import sys
 from typing import Optional
+
 from pythonjsonlogger import jsonlogger
+
 
 def configure_logging(level: Optional[str] = None) -> None:
     logger = logging.getLogger()

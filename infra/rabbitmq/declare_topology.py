@@ -5,6 +5,7 @@ Topología canónica RabbitMQ (single-tenant):
 """
 import os
 import sys
+
 import pika
 from pika.exceptions import ChannelClosedByBroker
 
@@ -26,9 +27,12 @@ if not USER or not PASSWORD:
     sys.exit(1)
 
 creds = pika.PlainCredentials(USER, PASSWORD)
-params = pika.ConnectionParameters(host=RABBIT_HOST, port=RABBIT_PORT, virtual_host=RABBIT_VHOST, credentials=creds)
+params = pika.ConnectionParameters(
+    host=RABBIT_HOST, port=RABBIT_PORT, virtual_host=RABBIT_VHOST, credentials=creds
+)
 conn = pika.BlockingConnection(params)
 ch = conn.channel()
+
 
 def ensure_exchange(name: str, durable: bool = True, ex_type: str = "topic"):
     try:
@@ -40,6 +44,7 @@ def ensure_exchange(name: str, durable: bool = True, ex_type: str = "topic"):
         new_ch.exchange_declare(exchange=name, exchange_type=ex_type, durable=durable)
         return new_ch
 
+
 def ensure_queue(name: str, args: dict | None = None):
     args = args or {}
     try:
@@ -50,6 +55,7 @@ def ensure_queue(name: str, args: dict | None = None):
         new_ch = conn.channel()
         new_ch.queue_declare(queue=name, durable=True, arguments=args)
         return new_ch
+
 
 ch = ensure_exchange(EXCHANGE)
 print(f"exchange {EXCHANGE} OK")

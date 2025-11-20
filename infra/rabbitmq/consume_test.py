@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-import os
-import sys
-import time
 import json
+import os
+import time
+
 import pika
 import pytest
 
@@ -77,9 +77,10 @@ def test_rabbitmq_consume_one_message_non_blocking():
             method, props, body = ch.basic_get(queue=QUEUE_NAME, auto_ack=False)
             if method:
                 try:
-                    msg = json.loads(body.decode("utf-8"))
+                    json.loads(body.decode("utf-8"))
                 except Exception:
-                    msg = {"raw": body[:200]}
+                    # Si no es JSON válido, lo ignoramos (smoke test no falla por esto)
+                    pass
                 # Acknowledge y validaciones mínimas
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 got = True

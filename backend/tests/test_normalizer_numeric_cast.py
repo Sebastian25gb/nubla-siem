@@ -1,12 +1,13 @@
 from backend.app.processing.normalizer import normalize
 
+
 def test_normalizer_numeric_cast():
     raw = {
         "message": (
-            'devname=Host srcip=1.1.1.1 dstip=2.2.2.2 '
-            'srcport=443 dstport=5500 count=7 proto=17 '
+            "devname=Host srcip=1.1.1.1 dstip=2.2.2.2 "
+            "srcport=443 dstport=5500 count=7 proto=17 "
             'msg="pps 321 of prior second" severity=CRITICAL '
-            'crscore=70 attack=udp_flood attackid=999'
+            "crscore=70 attack=udp_flood attackid=999"
         )
     }
     out = normalize(raw)

@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     # OpenSearch-only
     opensearch_host: str = "opensearch:9200"
@@ -25,5 +26,6 @@ class Settings(BaseSettings):
     ncs_schema_local_path: str = "backend/app/schema/ncs_v1.0.0.json"
 
     model_config = SettingsConfigDict(env_prefix="", case_sensitive=False)
+
 
 settings = Settings()

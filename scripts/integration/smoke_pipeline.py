@@ -6,10 +6,18 @@ Smoke test Nubla SIEM:
 3. Imprime JSON resumen.
 Exit code 0 si pasa; 1 si falla alguna condición básica.
 """
-import os, time, json, pika, requests, sys
+import json
+import os
+import sys
+import time
+
+import pika
+import requests
+
 
 def env(name, default=None):
     return os.getenv(name, default)
+
 
 host_rmq = env("RABBITMQ_HOST", "127.0.0.1")
 user_rmq = env("RABBITMQ_USER", "admin")
@@ -26,12 +34,12 @@ conn = pika.BlockingConnection(pika.ConnectionParameters(host_rmq, 5672, credent
 ch = conn.channel()
 
 valid = {
-  "tenant_id": "default",
-  "@timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-  "dataset": "syslog.generic",
-  "schema_version": "1.0.0",
-  "severity": "HIGH",
-  "message": "smoke test event"
+    "tenant_id": "default",
+    "@timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "dataset": "syslog.generic",
+    "schema_version": "1.0.0",
+    "severity": "HIGH",
+    "message": "smoke test event",
 }
 invalid = {"message": "incomplete"}
 
@@ -56,23 +64,32 @@ try:
         f"http://{host_rmq}:15672/api/queues/%2F/{dlq}/get",
         auth=(user_rmq, pass_rmq),
         headers={"content-type": "application/json"},
-        data=json.dumps({"count":10,"ackmode":"ack_requeue_true","encoding":"auto","truncate":50000})
+        data=json.dumps(
+            {"count": 10, "ackmode": "ack_requeue_true", "encoding": "auto", "truncate": 50000}
+        ),
     )
     dlq_msgs = rdlq.json()
 except Exception:
     dlq_msgs = []
 
-invalid_present = any("incomplete" in (json.loads(m.get("payload","{}")).get("message","") if isinstance(m.get("payload"), str) else "")
-                      for m in dlq_msgs)
+invalid_present = any(
+    "incomplete"
+    in (
+        json.loads(m.get("payload", "{}")).get("message", "")
+        if isinstance(m.get("payload"), str)
+        else ""
+    )
+    for m in dlq_msgs
+)
 
 severity_lower_ok = any(doc.get("severity") == "high" for doc in indexed)
 
 result = {
-  "indexed_count": len(indexed),
-  "severity_lowercase": severity_lower_ok,
-  "invalid_in_dlq": invalid_present,
-  "dlq_count_sample": len(dlq_msgs),
-  "pass": bool(severity_lower_ok and invalid_present)
+    "indexed_count": len(indexed),
+    "severity_lowercase": severity_lower_ok,
+    "invalid_in_dlq": invalid_present,
+    "dlq_count_sample": len(dlq_msgs),
+    "pass": bool(severity_lower_ok and invalid_present),
 }
 
 print(json.dumps(result, ensure_ascii=False, indent=2))

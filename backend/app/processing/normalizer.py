@@ -9,8 +9,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 KV_RE = re.compile(r'(\w+)=(".*?"|[^"\s]+)')
-PRI_RE = re.compile(r'^<\d+>')
-PPS_RE = re.compile(r'pps\s+(\d+)\b')
+PRI_RE = re.compile(r"^<\d+>")
+PPS_RE = re.compile(r"pps\s+(\d+)\b")
+
 
 def parse_kv(s: str) -> Dict[str, str]:
     out: Dict[str, str] = {}
@@ -22,6 +23,7 @@ def parse_kv(s: str) -> Dict[str, str]:
         out[k] = v
     return out
 
+
 def ns_epoch_to_iso(ns_str: str) -> str:
     try:
         ns = int(ns_str)
@@ -31,6 +33,7 @@ def ns_epoch_to_iso(ns_str: str) -> str:
     except Exception:
         return datetime.now(timezone.utc).isoformat()
 
+
 def to_int_safe(v: Optional[str]) -> Optional[int]:
     if v is None:
         return None
@@ -39,8 +42,10 @@ def to_int_safe(v: Optional[str]) -> Optional[int]:
     except Exception:
         return None
 
+
 def strip_pri(s: str) -> str:
-    return PRI_RE.sub('', s, count=1)
+    return PRI_RE.sub("", s, count=1)
+
 
 def normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(raw, dict):
@@ -70,7 +75,7 @@ def normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
         tz = kv.get("tz")
         if date and timev:
             try:
-                if tz and re.match(r'^[+-]\d{4}$', tz):
+                if tz and re.match(r"^[+-]\d{4}$", tz):
                     tz = tz[:3] + ":" + tz[3:]
                 ts = f"{date}T{timev}{tz}" if tz else f"{date}T{timev}Z"
             except Exception:
@@ -82,7 +87,9 @@ def normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
     out["message"] = kv.get("msg") or cleaned
 
     # Severidad: conserva original y normaliza a minúsculas para schema/queries
-    sev_in = raw.get("severity") or kv.get("severity") or kv.get("level") or kv.get("crlevel") or "info"
+    sev_in = (
+        raw.get("severity") or kv.get("severity") or kv.get("level") or kv.get("crlevel") or "info"
+    )
     sev_str = str(sev_in)
     out["severity_original"] = sev_str
     out["severity"] = sev_str.lower()
@@ -139,9 +146,13 @@ def normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     # Countries (simplificación)
     if "srccountry" in kv:
-        out.setdefault("source", {}).setdefault("geo", {})["country_iso_code"] = kv.get("srccountry").strip().upper().replace(" ", "_")
+        out.setdefault("source", {}).setdefault("geo", {})["country_iso_code"] = (
+            kv.get("srccountry").strip().upper().replace(" ", "_")
+        )
     if "dstcountry" in kv:
-        out.setdefault("destination", {}).setdefault("geo", {})["country_iso_code"] = kv.get("dstcountry").strip().upper().replace(" ", "_")
+        out.setdefault("destination", {}).setdefault("geo", {})["country_iso_code"] = (
+            kv.get("dstcountry").strip().upper().replace(" ", "_")
+        )
 
     # Labels (subset)
     labels = {}
