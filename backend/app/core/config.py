@@ -1,10 +1,15 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    # Para desarrollo local apuntar a OpenSearch (ajusta si usas ES)
-    elasticsearch_host: str = "opensearch:9200"
+    # OpenSearch-only
+    opensearch_host: str = "opensearch:9200"
 
-    # RabbitMQ: usar 127.0.0.1 si el puerto está mapeado al host, se puede sobrescribir con env
+    # Compatibilidad temporal (código legado puede seguir leyendo elasticsearch_host)
+    @property
+    def elasticsearch_host(self) -> str:
+        return self.opensearch_host
+
+    # RabbitMQ
     rabbitmq_host: str = "127.0.0.1"
     rabbitmq_user: str = "admin"
     rabbitmq_password: str = "securepass"
@@ -17,7 +22,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Schema local path (puede sobreescribirse con NCS_SCHEMA_LOCAL_PATH)
-    ncs_schema_local_path: str = "backend/app/schema/ncs_schema_registry.json"
+    ncs_schema_local_path: str = "backend/app/schema/ncs_v1.0.0.json"
 
     model_config = SettingsConfigDict(env_prefix="", case_sensitive=False)
 
