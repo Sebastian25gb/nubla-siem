@@ -67,7 +67,10 @@ def main() -> None:
 
     es = get_es()
 
-    schema_path = os.getenv("NCS_SCHEMA_LOCAL_PATH", getattr(settings, "ncs_schema_local_path", "backend/app/schema/ncs_schema_registry.json"))
+    schema_path = os.getenv(
+    "NCS_SCHEMA_LOCAL_PATH",
+    getattr(settings, "ncs_schema_local_path", "backend/app/schema/ncs_v1.0.0.json"),
+    )
     validator = build_validator(schema_path)
 
     try:
