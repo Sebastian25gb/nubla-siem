@@ -1,1 +1,1 @@
-# Core package for configuration and logging utilities.
+# Core package: settings, logging configuration.

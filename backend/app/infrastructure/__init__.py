@@ -1,1 +1,1 @@
-# External infrastructure clients (RabbitMQ, etc.).
+# Infrastructure package: external services (RabbitMQ, etc.).

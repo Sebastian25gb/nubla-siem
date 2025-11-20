@@ -1,0 +1,15 @@
+{
+  "description": "Nubla logs ingest pipeline (normalize severity, set defaults if missing)",
+  "processors": [
+    {
+      "lowercase": {
+        "field": "severity",
+        "ignore_missing": true
+      }
+    }
+  ],
+  "_meta": {
+    "owner": "nublas",
+    "version": 1
+  }
+}

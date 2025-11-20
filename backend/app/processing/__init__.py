@@ -1,1 +1,1 @@
-# Processing layer: normalization and consumers.
+# Processing package: normalizer, consumer, utils.

@@ -1,1 +1,1 @@
-# Domain models and schemas for the SIEM.
+# Domain package: domain models and schemas.

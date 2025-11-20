@@ -1,1 +1,1 @@
-# Storage clients (Elasticsearch).
+# Repository package: storage clients and persistence logic.

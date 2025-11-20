@@ -1,24 +1,61 @@
 {
-  "index_patterns": ["logs-default-*"],
+  "index_patterns": ["logs-default-*", "logs-*"],
   "priority": 50,
   "template": {
+    "settings": {
+      "number_of_shards": 1
+    },
     "mappings": {
       "dynamic": true,
+      "dynamic_templates": [
+        {
+          "labels_as_keyword": {
+            "path_match": "labels.*",
+            "mapping": { "type": "keyword", "ignore_above": 256 }
+          }
+        }
+      ],
       "properties": {
+        "tenant_id": { "type": "keyword" },
+        "schema_version": { "type": "keyword" },
+        "dataset": { "type": "keyword" },
+        "severity": { "type": "keyword" },
         "host": {
           "type": "text",
-          "fields": {
-            "keyword": { "type": "keyword", "ignore_above": 256 }
-          }
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
         },
         "host_name": {
           "type": "text",
           "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } }
+        },
+        "message": { "type": "text" },
+        "@timestamp": { "type": "date" },
+        "source": {
+          "properties": {
+            "ip": { "type": "ip" },
+            "port": { "type": "integer" },
+            "host": { "type": "keyword" }
+          }
+        },
+        "destination": {
+          "properties": {
+            "ip": { "type": "ip" },
+            "port": { "type": "integer" },
+            "host": { "type": "keyword" }
+          }
+        },
+        "user": {
+          "properties": {
+            "id": { "type": "keyword" },
+            "name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+            "email": { "type": "keyword" }
+          }
+        },
+        "original": {
+          "type": "object",
+          "enabled": true
         }
       }
-    },
-    "settings": {
-      "number_of_shards": 1
     }
   }
 }

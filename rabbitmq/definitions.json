@@ -7,7 +7,16 @@
       "name": "logs_default",
       "vhost": "/",
       "type": "topic",
-      "durable": true,            
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "logs_default.dlx",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
       "auto_delete": false,
       "internal": false,
       "arguments": {}
@@ -16,6 +25,15 @@
   "queues": [
     {
       "name": "nubla_logs_default",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange": "logs_default.dlx"
+      }
+    },
+    {
+      "name": "nubla_logs_default.dlq",
       "vhost": "/",
       "durable": true,
       "auto_delete": false,
@@ -29,6 +47,14 @@
       "destination": "nubla_logs_default",
       "destination_type": "queue",
       "routing_key": "nubla.log.default",
+      "arguments": {}
+    },
+    {
+      "vhost": "/",
+      "source": "logs_default.dlx",
+      "destination": "nubla_logs_default.dlq",
+      "destination_type": "queue",
+      "routing_key": "#",
       "arguments": {}
     }
   ]

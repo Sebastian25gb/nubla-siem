@@ -136,8 +136,8 @@ services:
       context: ./backend/app
     environment:
       - PYTHONPATH=/app
-      - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-elasticsearch}
-      - RABBITMQ_HOST=${RABBITMQ_HOST:-rabbitmq}
+      - ELASTICSEARCH_HOST=opensearch:9200
+      - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USER=${RABBITMQ_USER:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-securepass}
       - RABBITMQ_EXCHANGE=${RABBITMQ_EXCHANGE:-logs_default}
