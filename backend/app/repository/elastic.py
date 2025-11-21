@@ -8,10 +8,6 @@ logger = logging.getLogger(__name__)
 
 
 def _normalize_url(raw: Optional[str]) -> str:
-    """
-    Normaliza un host o URL a un endpoint http://host:port
-    Fallback por defecto a opensearch en red de docker-compose.
-    """
     fallback = "http://opensearch:9200"
     raw = (raw or "").strip()
     if not raw:
@@ -24,20 +20,14 @@ def _normalize_url(raw: Optional[str]) -> str:
 
 
 def _get_auth() -> Tuple[Optional[str], Optional[str]]:
-    """
-    Se soportan OS_USER/OS_PASS. (ES_USER/ES_PASS quedan deprecadas pero se leen si existen)
-    """
     user = os.getenv("OS_USER") or os.getenv("ES_USER")
     pwd = os.getenv("OS_PASS") or os.getenv("ES_PASS")
     if user and pwd:
         return user, pwd
-    return None, None  # sin auth por defecto
+    return None, None
 
 
 def get_es():
-    """
-    Retorna cliente OpenSearch. (Nombre legado por compatibilidad de imports)
-    """
     raw = (
         os.getenv("OPENSEARCH_HOST")
         or getattr(settings, "opensearch_host", None)

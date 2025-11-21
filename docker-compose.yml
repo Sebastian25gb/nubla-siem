@@ -124,6 +124,10 @@ services:
       - RABBITMQ_ROUTING_KEY=${RABBITMQ_ROUTING_KEY:-nubla.log.default}
       - TENANT_ID=${TENANT_ID:-default}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - USE_BULK=${USE_BULK:-false}
+      - BULK_MAX_ITEMS=${BULK_MAX_ITEMS:-500}
+      - BULK_MAX_INTERVAL_MS=${BULK_MAX_INTERVAL_MS:-1000}
+      - CONSUMER_PREFETCH=${CONSUMER_PREFETCH:-5}
     depends_on:
       opensearch:
         condition: service_healthy
