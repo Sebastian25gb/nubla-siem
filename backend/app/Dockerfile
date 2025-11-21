@@ -1,17 +1,21 @@
 FROM python:3.10-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
-
 WORKDIR /app
-COPY requirements.txt .
+
+# Copiamos primero requirements para aprovechar cache
+COPY backend/app/requirements.txt ./requirements.txt
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
+# Copiamos todo el repo (contexto = raíz del repo)
 COPY . .
-# Usuario no root
-RUN useradd -m appuser
+
+# Ajuste PYTHONPATH para que /app esté en path (contiene backend/)
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+# Usuario no root (opcional)
+RUN useradd -m appuser || true
 USER appuser
 
-# Por defecto arranca la API; el consumer define su command en compose
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Comando por defecto (API). El consumer lo sobreescribe en docker-compose.
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
