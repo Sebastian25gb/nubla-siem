@@ -31,4 +31,10 @@ Criterios:
 - bulk_errors_total: errores o partial errors en flush bulk.
 - os_index_retry (log): un intento de reintento de indexación.
 - os_index_failed_final (log): fallo definitivo tras agotar reintentos.
-```
+````markdown name=README_OPERATIONS.md
+```markdown
+### Ingest Pipeline
+
+Se incluye script `scripts/setup_ingest_pipeline.py` para crear/validar el pipeline `logs_ingest`.
+Ejemplo:
+  OPENSEARCH_HOST=localhost:9201 python scripts/setup_ingest_pipeline.py --test '{"message":"hello","tenant_id":"default"}'
