@@ -58,7 +58,7 @@ MANUAL_DLX_EXCHANGE = os.getenv("RABBITMQ_DLX", "logs_default.dlx")
 USE_BULK = os.getenv("USE_BULK", "false").lower() == "true"
 BULK_MAX_ITEMS = int(os.getenv("BULK_MAX_ITEMS", "500"))
 BULK_MAX_INTERVAL_MS = int(os.getenv("BULK_MAX_INTERVAL_MS", "1000"))
-CONSUMER_PREFETCH = int(os.getenv("CONSUMER_PREFETCH", "1"))
+CONSUMER_PREFETCH = int(os.getenv("CONSUMER_PREFETCH", "5"))
 
 REQUIRE_TENANT = os.getenv("REQUIRE_TENANT", "false").lower() == "true"
 
@@ -68,6 +68,18 @@ SEVERITY_MAP = {
     "warning": "medium",
     "warn": "medium",
 }
+
+if TYPE_CHECKING:
+    from backend.app.processing.bulk_indexer import (
+        BulkIndexer as BulkIndexerType,  # pragma: no cover
+    )
+
+try:
+    from backend.app.processing.bulk_indexer import BulkIndexer as _BulkIndexer  # type: ignore
+except Exception:
+    _BulkIndexer = None  # type: ignore
+
+bulk_indexer: Optional["BulkIndexerType"] = None
 
 
 def load_local_schema(path: str) -> Dict[str, Any]:
@@ -124,19 +136,6 @@ def validate_tenant(evt: Dict[str, Any]) -> bool:
     return isinstance(t, str) and bool(t.strip())
 
 
-if TYPE_CHECKING:
-    from backend.app.processing.bulk_indexer import (
-        BulkIndexer as BulkIndexerType,  # pragma: no cover
-    )
-
-try:
-    from backend.app.processing.bulk_indexer import BulkIndexer as _BulkIndexer  # type: ignore
-except Exception:
-    _BulkIndexer = None  # type: ignore
-
-bulk_indexer: Optional["BulkIndexerType"] = None
-
-
 def main() -> None:
     try:
         start_http_server(int(os.getenv("METRICS_PORT", "9109")))
@@ -187,7 +186,6 @@ def main() -> None:
             start_norm = time.time()
             raw_msg = json.loads(body)
             normalized = normalize(raw_msg)
-
             # Host→tenant mapping (override si tenant = default)
             try:
                 if isinstance(normalized, dict):
@@ -205,11 +203,7 @@ def main() -> None:
                         }
                         mapped = host_to_tenant.get(host_norm)
                         default_tenant = getattr(settings, "tenant_id", "default")
-                        if mapped and (
-                            existing_tenant is None
-                            or existing_tenant == ""
-                            or existing_tenant == default_tenant
-                        ):
+                        if mapped and (existing_tenant in (None, "", default_tenant)):
                             normalized["tenant_id"] = mapped
                             logger.info(
                                 "mapped_host_to_tenant",
@@ -231,49 +225,43 @@ def main() -> None:
 
             _normalize_severity(evt_dict)
 
-            if REQUIRE_TENANT:
-                if not validate_tenant(evt_dict):
-                    EVENTS_VALIDATION_FAILED.inc()
-                    logger.warning(
-                        "missing_tenant_id",
-                        extra={
-                            "raw_tenant": evt_dict.get("tenant_id"),
-                            "reject_reason": "missing_tenant_id",
-                        },
-                    )
-                    if USE_MANUAL_DLX:
-                        publish_to_dlx_with_reason(
-                            ch, body, method.routing_key, "missing_tenant_id"
-                        )
-                        ch.basic_ack(delivery_tag=method.delivery_tag)
-                    else:
-                        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-                        EVENTS_NACKED.inc()
-                        EVENTS_NACKED_BY_REASON.labels(reason="missing_tenant_id").inc()
-                    return
+            if REQUIRE_TENANT and not validate_tenant(evt_dict):
+                EVENTS_VALIDATION_FAILED.inc()
+                logger.warning(
+                    "missing_tenant_id",
+                    extra={
+                        "raw_tenant": evt_dict.get("tenant_id"),
+                        "reject_reason": "missing_tenant_id",
+                    },
+                )
+                if USE_MANUAL_DLX:
+                    publish_to_dlx_with_reason(ch, body, method.routing_key, "missing_tenant_id")
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                else:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                    EVENTS_NACKED.inc()
+                    EVENTS_NACKED_BY_REASON.labels(reason="missing_tenant_id").inc()
+                return
 
             evt_dict = prepare_event(evt_dict)
 
-            if not REQUIRE_TENANT:
-                if not validate_tenant(evt_dict):
-                    EVENTS_VALIDATION_FAILED.inc()
-                    logger.warning(
-                        "missing_tenant_id_after_prepare",
-                        extra={
-                            "raw_tenant": evt_dict.get("tenant_id"),
-                            "reject_reason": "missing_tenant_id",
-                        },
-                    )
-                    if USE_MANUAL_DLX:
-                        publish_to_dlx_with_reason(
-                            ch, body, method.routing_key, "missing_tenant_id"
-                        )
-                        ch.basic_ack(delivery_tag=method.delivery_tag)
-                    else:
-                        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-                        EVENTS_NACKED.inc()
-                        EVENTS_NACKED_BY_REASON.labels(reason="missing_tenant_id").inc()
-                    return
+            if not REQUIRE_TENANT and not validate_tenant(evt_dict):
+                EVENTS_VALIDATION_FAILED.inc()
+                logger.warning(
+                    "missing_tenant_id_after_prepare",
+                    extra={
+                        "raw_tenant": evt_dict.get("tenant_id"),
+                        "reject_reason": "missing_tenant_id",
+                    },
+                )
+                if USE_MANUAL_DLX:
+                    publish_to_dlx_with_reason(ch, body, method.routing_key, "missing_tenant_id")
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                else:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                    EVENTS_NACKED.inc()
+                    EVENTS_NACKED_BY_REASON.labels(reason="missing_tenant_id").inc()
+                return
 
             if validator is not None:
                 errors = list(validator.iter_errors(evt_dict))
@@ -298,13 +286,12 @@ def main() -> None:
                     return
 
             tenant = evt_dict.get("tenant_id") or "default"
-
             if not is_valid_tenant(tenant):
+                EVENTS_VALIDATION_FAILED.inc()
                 logger.warning(
                     "unknown_tenant_id",
                     extra={"tenant_id": tenant, "reject_reason": "unknown_tenant_id"},
                 )
-                EVENTS_VALIDATION_FAILED.inc()
                 if USE_MANUAL_DLX:
                     publish_to_dlx_with_reason(ch, body, method.routing_key, "unknown_tenant_id")
                     ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -322,7 +309,7 @@ def main() -> None:
                 EVENTS_INDEXED.inc()
                 EVENTS_INDEXED_BY_TENANT.labels(tenant_id=tenant).inc()
             else:
-                start_t = time.time()
+                start_idx = time.time()
                 try:
                     index_event(
                         es,
@@ -334,7 +321,7 @@ def main() -> None:
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                     EVENTS_INDEXED.inc()
                     EVENTS_INDEXED_BY_TENANT.labels(tenant_id=tenant).inc()
-                    total = time.time() - start_t
+                    total = time.time() - start_idx
                     INDEX_LATENCY.observe(total)
                     EVENT_INDEX_LATENCY.observe(total)
                     logger.info(
