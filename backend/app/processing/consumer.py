@@ -26,7 +26,6 @@ EVENTS_VALIDATION_FAILED = Counter("events_validation_failed_total", "Fallos de 
 EVENTS_INDEX_FAILED = Counter("events_index_failed_total", "Fallos indexación individual")
 EVENTS_BULK_FLUSHES = Counter("bulk_flushes_total", "Flush bulk realizados")
 
-# Etiquetadas
 EVENTS_INDEXED_BY_TENANT = Counter(
     "events_indexed_by_tenant_total", "Eventos indexados por tenant", ["tenant_id"]
 )
@@ -34,7 +33,6 @@ EVENTS_NACKED_BY_REASON = Counter(
     "events_nacked_by_reason_total", "Eventos rechazados por razón", ["reason"]
 )
 
-# Métricas de latencia y buffer (siempre disponibles)
 INDEX_LATENCY = Histogram(
     "index_latency_seconds",
     "Latencia por flush bulk o documento individual",
@@ -50,10 +48,8 @@ BULK_MAX_ITEMS = int(os.getenv("BULK_MAX_ITEMS", "500"))
 BULK_MAX_INTERVAL_MS = int(os.getenv("BULK_MAX_INTERVAL_MS", "1000"))
 CONSUMER_PREFETCH = int(os.getenv("CONSUMER_PREFETCH", "1"))
 
-# Control multitenancy estricto (por defecto false para compatibilidad con tests/dev)
 REQUIRE_TENANT = os.getenv("REQUIRE_TENANT", "false").lower() == "true"
 
-# Normalización adicional de severities fuera del set permitido por schema
 SEVERITY_MAP = {
     "error": "critical",
     "alert": "info",
@@ -112,26 +108,20 @@ def _normalize_severity(evt: Dict[str, Any]) -> None:
 
 
 def validate_tenant(evt: Dict[str, Any]) -> bool:
-    """Returns True if tenant_id is present and non-empty string."""
     t = evt.get("tenant_id")
     return isinstance(t, str) and bool(t.strip())
 
 
-# Typing-only import for static analysis (Pylance, mypy)
 if TYPE_CHECKING:
-    # Importamos el tipo con otro nombre para evitar colisiones con la variable runtime
     from backend.app.processing.bulk_indexer import (
         BulkIndexer as BulkIndexerType,  # pragma: no cover
     )
 
-# Runtime lazy import to avoid circulars or missing file issues
 try:
-    # Importamos la clase runtime con nombre distinto para NO sobrescribir el nombre del tipo
     from backend.app.processing.bulk_indexer import BulkIndexer as _BulkIndexer  # type: ignore
 except Exception:
     _BulkIndexer = None  # type: ignore
 
-# Anotación usando forward-reference al nombre del tipo (solo para análisis)
 bulk_indexer: Optional["BulkIndexerType"] = None
 
 
@@ -168,7 +158,6 @@ def main() -> None:
     )
     validator = build_validator(schema_path)
 
-    # Precarga del tenant registry para evitar checks en frío
     try:
         get_registry().load()
         logger.info("tenant_registry_loaded")
@@ -186,6 +175,31 @@ def main() -> None:
         try:
             raw_msg = json.loads(body)
             normalized = normalize(raw_msg)
+
+            # Host→tenant mapping (transitorio)
+            try:
+                if isinstance(normalized, dict) and not normalized.get("tenant_id"):
+                    host_val = (
+                        normalized.get("host")
+                        or normalized.get("host_name")
+                        or normalized.get("original", {}).get("raw_kv", {}).get("devname")
+                    )
+                    if host_val:
+                        host_norm = str(host_val).strip().lower().replace(" ", "-")
+                        host_to_tenant = {
+                            "delawarehotel": "delawarehotel",
+                            "demo-host": "demo-host",
+                        }
+                        mapped = host_to_tenant.get(host_norm)
+                        if mapped:
+                            normalized["tenant_id"] = mapped
+                            logger.info(
+                                "mapped_host_to_tenant",
+                                extra={"host": host_val, "tenant_mapped": mapped},
+                            )
+            except Exception:
+                logger.exception("host_to_tenant_mapping_failed")
+
             if isinstance(normalized, dict):
                 evt_dict = dict(normalized)
             else:
@@ -193,7 +207,6 @@ def main() -> None:
 
             _normalize_severity(evt_dict)
 
-            # Tenant validation early in strict mode
             if REQUIRE_TENANT:
                 if not validate_tenant(evt_dict):
                     EVENTS_VALIDATION_FAILED.inc()
@@ -215,10 +228,8 @@ def main() -> None:
                         EVENTS_NACKED_BY_REASON.labels(reason="missing_tenant_id").inc()
                     return
 
-            # Ensure minimal fields and fill defaults (including tenant_id from settings if missing)
             evt_dict = prepare_event(evt_dict)
 
-            # If not strict, guard fallback: ensure tenant exists after prepare_event
             if not REQUIRE_TENANT:
                 if not validate_tenant(evt_dict):
                     EVENTS_VALIDATION_FAILED.inc()
@@ -262,7 +273,6 @@ def main() -> None:
                         EVENTS_NACKED_BY_REASON.labels(reason="validation_failed").inc()
                     return
 
-            # Determinamos tenant final y validamos su existencia en el registry
             tenant = evt_dict.get("tenant_id") or "default"
 
             if not is_valid_tenant(tenant):
