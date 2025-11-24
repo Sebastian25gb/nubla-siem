@@ -3,19 +3,10 @@
 Aplicación de políticas ISM (Index State Management) por tenant en OpenSearch.
 
 Flujo:
-1. Genera (o aplica) una política con estados:
-   - hot: espera condiciones de rollover (edad, tamaño, docs).
-   - delete: borra índices tras alcanzar edad de retención.
-2. Crea una index template para logs-<tenant>-* que:
-   - Asigna la política.
-   - Define el alias de rollover (logs-<tenant>).
-   - Ajusta shards y replicas.
-3. Opcionalmente puede forzar la aplicación a índices existentes.
-
-Requisitos:
-- OpenSearch 2.x con plugin ISM activado (endpoint _plugins/_ism).
-- Variables de entorno OS_USER/OS_PASS si autenticado.
-- Ejecutar antes: crear alias + primer índice (si migrando desde modelo sin template).
+1. Crea (o actualiza) la política logs-<tenant>-policy con estados hot y delete.
+2. Crea (o actualiza) un index template composable logs-<tenant>-template con patrón logs-<tenant>-*.
+3. Opcionalmente adjunta la política a índices existentes usando el endpoint /_plugins/_ism/add/<index>.
+4. Permite dry-run para ver payloads sin persistir.
 """
 from __future__ import annotations
 
@@ -25,7 +16,7 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 
@@ -61,7 +52,6 @@ def build_policy(
     min_docs_rollover: int,
     delete_after_age: str,
 ) -> Dict[str, Any]:
-    # OpenSearch ISM requiere timestamps en epoch millis si se incluye last_updated_time (lo omitimos).
     policy_id = f"logs-{tenant}-policy"
     return {
         "policy": {
@@ -79,27 +69,44 @@ def build_policy(
                                 "min_index_age": min_index_age_rollover,
                                 "min_size": min_size_rollover,
                                 "min_doc_count": min_docs_rollover,
-                            }
+                            },
+                            "retry": {
+                                "count": 3,
+                                "backoff": "exponential",
+                                "delay": "1m",
+                            },
                         }
                     ],
                     "transitions": [
                         {
                             "state_name": "delete",
-                            "conditions": {"min_index_age": delete_after_age},
+                            "conditions": {
+                                "min_index_age": delete_after_age,
+                            },
                         }
                     ],
                 },
                 {
                     "name": "delete",
-                    "actions": [{"delete": {}}],
+                    "actions": [
+                        {
+                            "delete": {},
+                            "retry": {
+                                "count": 3,
+                                "backoff": "exponential",
+                                "delay": "1m",
+                            },
+                        }
+                    ],
                     "transitions": [],
                 },
             ],
-            # Template (esto permite auto-aplicar política a nuevos índices que cumplan patrón)
-            "ism_template": {
-                "index_patterns": [f"logs-{tenant}-*"],
-                "priority": 100,
-            },
+            "ism_template": [
+                {
+                    "index_patterns": [f"logs-{tenant}-*"],
+                    "priority": 100,
+                }
+            ],
         }
     }
 
@@ -111,9 +118,7 @@ def build_index_template(
     policy_id: str,
 ) -> Dict[str, Any]:
     """
-    Index template que:
-    - Aplica política ISM (clave depende de versión; se incluyen ambas).
-    - Define alias de rollover (logs-<tenant>).
+    Composable index template (sin wrapper 'index_template' en body).
     """
     return {
         "index_patterns": [f"logs-{tenant}-*"],
@@ -121,7 +126,7 @@ def build_index_template(
             "settings": {
                 "number_of_shards": shards,
                 "number_of_replicas": replicas,
-                # Claves históricas y actuales para compatibilidad
+                # Varias claves para distintas versiones/compatibilidad.
                 "opendistro.index_state_management.policy_id": policy_id,
                 "index.opendistro.index_state_management.policy_id": policy_id,
                 "opensearch.index_state_management.policy_id": policy_id,
@@ -138,9 +143,20 @@ def build_index_template(
     }
 
 
-def put_policy(session, policy_json: Dict[str, Any], dry_run: bool) -> Dict[str, Any]:
+def safe_json(resp) -> Any:
+    try:
+        return resp.json()
+    except Exception:
+        return {"raw": resp.text}
+
+
+def put_policy(session, policy_json: Dict[str, Any], dry_run: bool, force: bool) -> Dict[str, Any]:
     policy_id = policy_json["policy"]["policy_id"]
     url = f"{session.base_url}/_plugins/_ism/policies/{policy_id}"
+    if force and not dry_run:
+        # Borrar primero (ignorar si no existe)
+        del_resp = session.delete(url)
+        logging.info("policy_delete_attempt", extra={"status": del_resp.status_code})
     resp = session.put(url, data=json.dumps(policy_json))
     if dry_run:
         return {
@@ -149,9 +165,14 @@ def put_policy(session, policy_json: Dict[str, Any], dry_run: bool) -> Dict[str,
             "status_code": resp.status_code,
             "body": safe_json(resp),
         }
+    if resp.status_code == 409:
+        logging.warning("policy_exists_version_conflict_ignored", extra={"policy_id": policy_id})
+        return {"status_code": resp.status_code, "body": safe_json(resp), "ignored_conflict": True}
     if resp.status_code not in (200, 201):
-        raise RuntimeError(f"Error creando política {policy_id}: {resp.status_code} {resp.text}")
-    return safe_json(resp)
+        raise RuntimeError(
+            f"Error creando/actualizando política {policy_id}: {resp.status_code} {resp.text}"
+        )
+    return {"status_code": resp.status_code, "body": safe_json(resp)}
 
 
 def put_index_template(
@@ -159,7 +180,7 @@ def put_index_template(
 ) -> Dict[str, Any]:
     name = f"logs-{tenant}-template"
     url = f"{session.base_url}/_index_template/{name}"
-    resp = session.put(url, data=json.dumps({"index_template": template_json}))
+    resp = session.put(url, data=json.dumps(template_json))
     if dry_run:
         return {
             "dry_run": True,
@@ -168,77 +189,67 @@ def put_index_template(
             "body": safe_json(resp),
         }
     if resp.status_code not in (200, 201):
-        raise RuntimeError(f"Error creando index template {name}: {resp.status_code} {resp.text}")
-    return safe_json(resp)
+        raise RuntimeError(
+            f"Error creando/actualizando index template {name}: {resp.status_code} {resp.text}"
+        )
+    return {"status_code": resp.status_code, "body": safe_json(resp)}
+
+
+def list_existing_indices(session, tenant: str) -> List[str]:
+    pattern = f"logs-{tenant}-*"
+    url = f"{session.base_url}/{pattern}"
+    resp = session.get(url)
+    if resp.status_code == 404:
+        return []
+    data = safe_json(resp)
+    return list(data.keys())
+
+
+def attach_policy(session, index: str, policy_id: str, dry_run: bool) -> Dict[str, Any]:
+    url = f"{session.base_url}/_plugins/_ism/add/{index}"
+    payload = {"policy_id": policy_id}
+    if dry_run:
+        return {"index": index, "dry_run": True, "request": payload}
+    resp = session.post(url, data=json.dumps(payload))
+    return {
+        "index": index,
+        "status_code": resp.status_code,
+        "body": safe_json(resp),
+    }
 
 
 def attach_policy_to_existing_indices(
     session, tenant: str, policy_id: str, dry_run: bool
 ) -> Dict[str, Any]:
-    """
-    Asigna la política a índices existentes que coinciden con patrón logs-tenant-* y cuya configuración no la tenga.
-    """
-    pattern = f"logs-{tenant}-*"
-    # Obtener índices
-    url = f"{session.base_url}/{pattern}"
-    resp = session.get(url)
-    if resp.status_code == 404:
+    indices = list_existing_indices(session, tenant)
+    if not indices:
         return {"updated": 0, "indices": [], "message": "No indices found"}
-    data = safe_json(resp)
-    indices = list(data.keys())
-    changed = []
+    results = []
     for idx in indices:
-        # Ajustar settings (OpenSearch: PUT /<index>/_settings)
-        payload = {
-            "settings": {
-                "opendistro.index_state_management.policy_id": policy_id,
-                "index.opendistro.index_state_management.policy_id": policy_id,
-                "opensearch.index_state_management.policy_id": policy_id,
-            }
-        }
-        if dry_run:
-            changed.append({"index": idx, "payload": payload})
-        else:
-            s_url = f"{session.base_url}/{idx}/_settings"
-            r2 = session.put(s_url, data=json.dumps(payload))
-            if r2.status_code not in (200, 201):
-                raise RuntimeError(f"Error asignando política a {idx}: {r2.status_code} {r2.text}")
-            changed.append({"index": idx, "result": safe_json(r2)})
-    return {"updated": len(changed), "details": changed}
-
-
-def safe_json(resp) -> Any:
-    try:
-        return resp.json()
-    except Exception:
-        return {"raw": resp.text}
+        results.append(attach_policy(session, idx, policy_id, dry_run))
+    return {"updated": len(results), "details": results}
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Aplicar política ISM de rollover y delete por tenant.")
     p.add_argument("--tenant", required=True)
     p.add_argument(
-        "--min-index-age-rollover",
-        default="1d",
-        help="Edad mínima para rollover (e.g. 1d, 12h, 30m)",
+        "--min-index-age-rollover", default="1d", help="Edad mínima para rollover (1d, 12h, 30m)"
     )
-    p.add_argument(
-        "--min-size-rollover", default="50gb", help="Tamaño mínimo para rollover (e.g. 50gb)"
-    )
-    p.add_argument(
-        "--min-docs-rollover", type=int, default=10_000_000, help="Documentos mínimos para rollover"
-    )
-    p.add_argument(
-        "--delete-after-age",
-        default="30d",
-        help="Edad para transicionar a delete y eliminar índice",
-    )
+    p.add_argument("--min-size-rollover", default="50gb", help="Tamaño mínimo (50gb, 10gb...)")
+    p.add_argument("--min-docs-rollover", type=int, default=10_000_000)
+    p.add_argument("--delete-after-age", default="30d")
     p.add_argument("--shards", type=int, default=int(os.getenv("ISM_SHARDS", "1")))
     p.add_argument("--replicas", type=int, default=int(os.getenv("ISM_REPLICAS", "0")))
     p.add_argument(
-        "--attach-existing", action="store_true", help="Aplicar política a índices ya existentes"
+        "--attach-existing", action="store_true", help="Adjuntar política a índices ya existentes"
     )
-    p.add_argument("--dry-run", action="store_true", help="No persiste, solo muestra payloads")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument(
+        "--force-update-policy",
+        action="store_true",
+        help="Borrar política antes de crearla (si existe)",
+    )
     p.add_argument("--log-level", default=os.getenv("LOG_LEVEL", "INFO"))
     return p.parse_args()
 
@@ -249,9 +260,9 @@ def main() -> None:
         level=getattr(logging, str(args.log_level).upper(), logging.INFO),
         format="%(message)s",
     )
-
     session = http_client()
-    # Comprobación rápida del plugin ISM
+
+    # Comprobar plugin ISM
     ping = session.get(f"{session.base_url}/_plugins/_ism/policies")
     if ping.status_code not in (200, 404):
         print(
@@ -275,7 +286,9 @@ def main() -> None:
     )
     policy_id = policy_json["policy"]["policy_id"]
 
-    result_policy = put_policy(session, policy_json, dry_run=args.dry_run)
+    result_policy = put_policy(
+        session, policy_json, dry_run=args.dry_run, force=args.force_update_policy
+    )
     logging.info("policy_applied_or_dry_run")
     print(json.dumps({"policy_result": result_policy}, indent=2))
 
