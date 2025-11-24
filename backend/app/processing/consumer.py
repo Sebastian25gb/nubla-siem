@@ -176,9 +176,10 @@ def main() -> None:
             raw_msg = json.loads(body)
             normalized = normalize(raw_msg)
 
-            # Host→tenant mapping (transitorio)
+            # Host→tenant mapping (transitorio con override si tenant es el default)
             try:
-                if isinstance(normalized, dict) and not normalized.get("tenant_id"):
+                if isinstance(normalized, dict):
+                    existing_tenant = normalized.get("tenant_id")
                     host_val = (
                         normalized.get("host")
                         or normalized.get("host_name")
@@ -191,11 +192,21 @@ def main() -> None:
                             "demo-host": "demo-host",
                         }
                         mapped = host_to_tenant.get(host_norm)
-                        if mapped:
+                        # Override si no hay tenant o si es el tenant por defecto configurado
+                        default_tenant = getattr(settings, "tenant_id", "default")
+                        if mapped and (
+                            existing_tenant is None
+                            or existing_tenant == ""
+                            or existing_tenant == default_tenant
+                        ):
                             normalized["tenant_id"] = mapped
                             logger.info(
                                 "mapped_host_to_tenant",
-                                extra={"host": host_val, "tenant_mapped": mapped},
+                                extra={
+                                    "host": host_val,
+                                    "previous_tenant": existing_tenant,
+                                    "tenant_mapped": mapped,
+                                },
                             )
             except Exception:
                 logger.exception("host_to_tenant_mapping_failed")
