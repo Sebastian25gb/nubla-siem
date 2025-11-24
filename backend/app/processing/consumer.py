@@ -13,6 +13,7 @@ from backend.app.core.config import settings
 from backend.app.core.logging import configure_logging
 from backend.app.infrastructure.rabbitmq import get_channel
 from backend.app.processing.normalizer import normalize
+from backend.app.processing.tenant_registry import get_registry, is_valid_tenant
 from backend.app.processing.utils import prepare_event, top_validation_errors
 from backend.app.repository.elastic import get_es, index_event
 
@@ -48,6 +49,9 @@ USE_BULK = os.getenv("USE_BULK", "false").lower() == "true"
 BULK_MAX_ITEMS = int(os.getenv("BULK_MAX_ITEMS", "500"))
 BULK_MAX_INTERVAL_MS = int(os.getenv("BULK_MAX_INTERVAL_MS", "1000"))
 CONSUMER_PREFETCH = int(os.getenv("CONSUMER_PREFETCH", "1"))
+
+# Control multitenancy estricto (por defecto false para compatibilidad con tests/dev)
+REQUIRE_TENANT = os.getenv("REQUIRE_TENANT", "false").lower() == "true"
 
 # Normalización adicional de severities fuera del set permitido por schema
 SEVERITY_MAP = {
@@ -164,6 +168,13 @@ def main() -> None:
     )
     validator = build_validator(schema_path)
 
+    # Precarga del tenant registry para evitar checks en frío
+    try:
+        get_registry().load()
+        logger.info("tenant_registry_loaded")
+    except Exception:
+        logger.warning("tenant_registry_load_failed", exc_info=True)
+
     try:
         connection, channel, queue_name, exchange = get_channel()
     except Exception:
@@ -182,26 +193,52 @@ def main() -> None:
 
             _normalize_severity(evt_dict)
 
-            # Tenant validation: obligatorio en multitenancy estricta
-            if not validate_tenant(evt_dict):
-                EVENTS_VALIDATION_FAILED.inc()
-                logger.warning(
-                    "missing_tenant_id",
-                    extra={
-                        "raw_tenant": evt_dict.get("tenant_id"),
-                        "reject_reason": "missing_tenant_id",
-                    },
-                )
-                if USE_MANUAL_DLX:
-                    publish_to_dlx_with_reason(ch, body, method.routing_key, "missing_tenant_id")
-                    ch.basic_ack(delivery_tag=method.delivery_tag)
-                else:
-                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-                    EVENTS_NACKED.inc()
-                    EVENTS_NACKED_BY_REASON.labels(reason="missing_tenant_id").inc()
-                return
+            # Tenant validation early in strict mode
+            if REQUIRE_TENANT:
+                if not validate_tenant(evt_dict):
+                    EVENTS_VALIDATION_FAILED.inc()
+                    logger.warning(
+                        "missing_tenant_id",
+                        extra={
+                            "raw_tenant": evt_dict.get("tenant_id"),
+                            "reject_reason": "missing_tenant_id",
+                        },
+                    )
+                    if USE_MANUAL_DLX:
+                        publish_to_dlx_with_reason(
+                            ch, body, method.routing_key, "missing_tenant_id"
+                        )
+                        ch.basic_ack(delivery_tag=method.delivery_tag)
+                    else:
+                        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                        EVENTS_NACKED.inc()
+                        EVENTS_NACKED_BY_REASON.labels(reason="missing_tenant_id").inc()
+                    return
 
+            # Ensure minimal fields and fill defaults (including tenant_id from settings if missing)
             evt_dict = prepare_event(evt_dict)
+
+            # If not strict, guard fallback: ensure tenant exists after prepare_event
+            if not REQUIRE_TENANT:
+                if not validate_tenant(evt_dict):
+                    EVENTS_VALIDATION_FAILED.inc()
+                    logger.warning(
+                        "missing_tenant_id_after_prepare",
+                        extra={
+                            "raw_tenant": evt_dict.get("tenant_id"),
+                            "reject_reason": "missing_tenant_id",
+                        },
+                    )
+                    if USE_MANUAL_DLX:
+                        publish_to_dlx_with_reason(
+                            ch, body, method.routing_key, "missing_tenant_id"
+                        )
+                        ch.basic_ack(delivery_tag=method.delivery_tag)
+                    else:
+                        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                        EVENTS_NACKED.inc()
+                        EVENTS_NACKED_BY_REASON.labels(reason="missing_tenant_id").inc()
+                    return
 
             if validator is not None:
                 errors = list(validator.iter_errors(evt_dict))
@@ -225,7 +262,24 @@ def main() -> None:
                         EVENTS_NACKED_BY_REASON.labels(reason="validation_failed").inc()
                     return
 
+            # Determinamos tenant final y validamos su existencia en el registry
             tenant = evt_dict.get("tenant_id") or "default"
+
+            if not is_valid_tenant(tenant):
+                logger.warning(
+                    "unknown_tenant_id",
+                    extra={"tenant_id": tenant, "reject_reason": "unknown_tenant_id"},
+                )
+                EVENTS_VALIDATION_FAILED.inc()
+                if USE_MANUAL_DLX:
+                    publish_to_dlx_with_reason(ch, body, method.routing_key, "unknown_tenant_id")
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                else:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                    EVENTS_NACKED.inc()
+                    EVENTS_NACKED_BY_REASON.labels(reason="unknown_tenant_id").inc()
+                return
+
             index_name = f"logs-{tenant}"
 
             if bulk_indexer:
