@@ -3,7 +3,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from opensearchpy import OpenSearch
-from prometheus_client import Gauge, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +13,7 @@ INDEX_LATENCY = Histogram(
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0),
 )
 BUFFER_SIZE = Gauge("consumer_buffer_size", "Número de eventos en buffer bulk")
+BULK_ERRORS = Counter("bulk_errors_total", "Errores en flush bulk")
 
 
 class BulkIndexer:
@@ -55,7 +56,6 @@ class BulkIndexer:
             return
         payload: List[Dict[str, Any]] = []
         for a in self.buffer:
-            # Formato bulk API: acción + documento
             header = {"index": {"_index": a["_index"]}}
             if "pipeline" in a:
                 header["index"]["pipeline"] = a["pipeline"]
@@ -67,18 +67,18 @@ class BulkIndexer:
             resp = self.client.bulk(body=payload, refresh=False)
             took = time.time() - start
             INDEX_LATENCY.observe(took)
-            errors = resp.get("errors")
-            if errors:
+            if resp.get("errors"):
+                BULK_ERRORS.inc()
                 logger.warning("bulk_flush_partial_errors", extra={"items": len(self.buffer)})
             else:
                 logger.info(
                     "bulk_flush_ok", extra={"items": len(self.buffer), "took_seconds": took}
                 )
         except Exception as e:
+            BULK_ERRORS.inc()
             logger.exception(
                 "bulk_flush_failed", extra={"items": len(self.buffer), "error": str(e)}
             )
-            # No vaciamos buffer para posible reintento simple (descartamos por simplicidad aquí)
         finally:
             self.buffer.clear()
             BUFFER_SIZE.set(0)

@@ -40,6 +40,13 @@ INDEX_LATENCY = Histogram(
 )
 BUFFER_SIZE = Gauge("consumer_buffer_size", "Número de eventos en buffer bulk")
 
+NORMALIZER_LATENCY = Histogram(
+    "normalizer_latency_seconds",
+    "Tiempo de normalización + mapping por evento",
+    buckets=(0.0005, 0.001, 0.005, 0.01, 0.025, 0.05),
+)
+TENANT_REGISTRY_SIZE = Gauge("tenant_registry_size", "Número de tenants registrados")
+
 USE_MANUAL_DLX = os.getenv("USE_MANUAL_DLX", "false").lower() == "true"
 MANUAL_DLX_EXCHANGE = os.getenv("RABBITMQ_DLX", "logs_default.dlx")
 
@@ -52,7 +59,7 @@ REQUIRE_TENANT = os.getenv("REQUIRE_TENANT", "false").lower() == "true"
 
 SEVERITY_MAP = {
     "error": "critical",
-    "alert": "info",
+    "alert": "high",
     "warning": "medium",
     "warn": "medium",
 }
@@ -144,10 +151,7 @@ def main() -> None:
         )
         logger.info(
             "bulk_enabled",
-            extra={
-                "max_items": BULK_MAX_ITEMS,
-                "max_interval_ms": BULK_MAX_INTERVAL_MS,
-            },
+            extra={"max_items": BULK_MAX_ITEMS, "max_interval_ms": BULK_MAX_INTERVAL_MS},
         )
     else:
         logger.info("bulk_disabled")
@@ -159,7 +163,9 @@ def main() -> None:
     validator = build_validator(schema_path)
 
     try:
-        get_registry().load()
+        reg = get_registry()
+        reg.load()
+        TENANT_REGISTRY_SIZE.set(len(reg.all()))
         logger.info("tenant_registry_loaded")
     except Exception:
         logger.warning("tenant_registry_load_failed", exc_info=True)
@@ -173,10 +179,11 @@ def main() -> None:
     def handle(ch, method, properties, body):
         EVENTS_PROCESSED.inc()
         try:
+            start_norm = time.time()
             raw_msg = json.loads(body)
             normalized = normalize(raw_msg)
 
-            # Host→tenant mapping (transitorio con override si tenant es el default)
+            # Host→tenant mapping (override si tenant = default)
             try:
                 if isinstance(normalized, dict):
                     existing_tenant = normalized.get("tenant_id")
@@ -192,7 +199,6 @@ def main() -> None:
                             "demo-host": "demo-host",
                         }
                         mapped = host_to_tenant.get(host_norm)
-                        # Override si no hay tenant o si es el tenant por defecto configurado
                         default_tenant = getattr(settings, "tenant_id", "default")
                         if mapped and (
                             existing_tenant is None
@@ -210,6 +216,8 @@ def main() -> None:
                             )
             except Exception:
                 logger.exception("host_to_tenant_mapping_failed")
+            finally:
+                NORMALIZER_LATENCY.observe(time.time() - start_norm)
 
             if isinstance(normalized, dict):
                 evt_dict = dict(normalized)

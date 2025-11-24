@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from typing import Any, Dict, Optional, Tuple
 
 from backend.app.core.config import settings
@@ -55,6 +56,8 @@ def index_event(
     refresh: Optional[str] = None,
     pipeline: Optional[str] = None,
     ensure_required: bool = True,
+    retries: int = 3,
+    backoff_seconds: float = 0.5,
 ) -> Dict[str, Any]:
     if ensure_required:
         body.setdefault("schema_version", "1.0.0")
@@ -68,8 +71,20 @@ def index_event(
     if pipeline:
         params["pipeline"] = pipeline
 
-    try:
-        return es_client.index(index=index, body=body, params=params)
-    except Exception as e:
-        logger.exception("os_index_failed", extra={"index": index, "error": str(e)})
-        raise
+    attempt = 0
+    last_err: Optional[Exception] = None
+    while attempt <= retries:
+        try:
+            return es_client.index(index=index, body=body, params=params)
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "os_index_retry",
+                extra={"index": index, "attempt": attempt, "error": str(e)},
+            )
+            if attempt == retries:
+                logger.exception("os_index_failed_final", extra={"index": index, "error": str(e)})
+                raise
+            time.sleep(backoff_seconds * (attempt + 1))
+            attempt += 1
+    raise last_err if last_err else RuntimeError("Unknown indexing failure")

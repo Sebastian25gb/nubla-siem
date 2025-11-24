@@ -23,3 +23,12 @@ Criterios:
 - `severity_lowercase: true`
 - `invalid_in_dlq: true`
 - `pass: true`
+```markdown
+### Nuevas métricas (Commit 3)
+
+- normalizer_latency_seconds: tiempo de normalización por evento.
+- tenant_registry_size: número de tenants cargados.
+- bulk_errors_total: errores o partial errors en flush bulk.
+- os_index_retry (log): un intento de reintento de indexación.
+- os_index_failed_final (log): fallo definitivo tras agotar reintentos.
+```
