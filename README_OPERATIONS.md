@@ -1,65 +1,161 @@
-# Operaciones: Rollover de índices por tenant
+# Operaciones: Rollover e ISM
 
-Este repositorio indexa en índices por tenant con alias `logs-<tenant>`. El script `scripts/rollover_tenant_index.py` automatiza:
-- Inicialización del primer índice y alias (`logs-<tenant>-000001` + alias `logs-<tenant>` con `is_write_index: true`)
-- Rollover con condiciones (`max_docs`, `max_size`, `max_age`), opcionalmente en `--dry-run`
+Este repositorio indexa eventos en índices por tenant usando alias `logs-<tenant>` y nombre físico `logs-<tenant>-000001`, `logs-<tenant>-000002`, etc.
 
-Requisitos:
-- OpenSearch accesible (por defecto `http://opensearch:9200`, configurable con `OPENSEARCH_HOST`)
-- Python con `opensearch-py` instalado (ya está en requirements)
+## 1. Rollover Manual (Script existente)
 
-## Comandos básicos
+Script: `scripts/rollover_tenant_index.py`
 
-Inicializar alias/índice si no existen:
+Comandos claves:
 ```bash
-python scripts/rollover_tenant_index.py --tenant delawarehotel --init --shards 1 --replicas 0
-```
-
-Ver estado actual:
-```bash
+# Ver estado
 python scripts/rollover_tenant_index.py --tenant delawarehotel --check
+
+# Rollover forzado por doc count (si índice ya tiene ≥1 doc)
+python scripts/rollover_tenant_index.py --tenant delawarehotel --rollover --max-docs 1
 ```
 
-Simular rollover (no crea índice):
+Respuesta típica de rollover:
+```json
+{
+  "acknowledged": true,
+  "old_index": "logs-delawarehotel-000001",
+  "new_index": "logs-delawarehotel-000002",
+  "rolled_over": true,
+  "conditions": {
+    "[max_docs: 1]": true
+  }
+}
+```
+
+## 2. Index State Management (ISM) Automático
+
+Para evitar cron y scripts manuales, OpenSearch ISM permite definir políticas que:
+- Hacen rollover según condiciones (edad, tamaño, número de documentos).
+- Eliminar índices tras periodo de retención.
+
+### Script: `scripts/apply_ism_policy.py`
+
+Genera y aplica por tenant:
+- Política `logs-<tenant>-policy`
+- Index template `logs-<tenant>-template` con alias de rollover y la política.
+
+Ejemplo (tenant delawarehotel):
 ```bash
-python scripts/rollover_tenant_index.py --tenant delawarehotel --rollover --dry-run --max-docs 1000000 --max-size 50gb --max-age 7d
+export OPENSEARCH_HOST=http://localhost:9201
+export OS_USER=admin
+export OS_PASS=admin
+
+python scripts/apply_ism_policy.py --tenant delawarehotel \
+  --min-index-age-rollover 1d \
+  --min-size-rollover 50gb \
+  --min-docs-rollover 10000000 \
+  --delete-after-age 30d \
+  --shards 1 \
+  --replicas 0
 ```
 
-Ejecutar rollover real:
+Dry-run (no persiste):
 ```bash
-python scripts/rollover_tenant_index.py --tenant delawarehotel --rollover --max-docs 1000000 --max-size 50gb --max-age 7d
+python scripts/apply_ism_policy.py --tenant delawarehotel --dry-run
 ```
 
-Notas:
-- El script asegura `is_write_index: true` en el índice de escritura del alias.
-- Si el alias existe sin `is_write_index`, lo corrige.
-- Los índices siguen el patrón `logs-<tenant>-000001`, `logs-<tenant>-000002`, ...
-
-## Sugerencia de automatización (cron)
-
-Ejemplo de cron diario con dry-run (solo simula y loguea):
-```cron
-0 2 * * * cd /srv/nubla-siem && /usr/bin/python3 scripts/rollover_tenant_index.py --tenant delawarehotel --rollover --dry-run --max-docs 15000000 --max-size 50gb --max-age 7d >> /var/log/nubla/rollover.log 2>&1
+Adjuntar política a índices ya existentes:
+```bash
+python scripts/apply_ism_policy.py --tenant delawarehotel --attach-existing
 ```
 
-Y un job semanal real:
-```cron
-0 3 * * 0 cd /srv/nubla-siem && /usr/bin/python3 scripts/rollover_tenant_index.py --tenant delawarehotel --rollover --max-docs 15000000 --max-size 50gb --max-age 7d >> /var/log/nubla/rollover.log 2>&1
+### Verificación
+
+1. Listar política:
+```bash
+curl -s $OPENSEARCH_HOST/_plugins/_ism/policies/logs-delawarehotel-policy | jq .
 ```
 
-## Troubleshooting
+2. Ver template:
+```bash
+curl -s $OPENSEARCH_HOST/_index_template/logs-delawarehotel-template | jq .
+```
 
-- 404 alias not found:
-  - Ejecuta `--init` antes del rollover.
-- `is_write_index` ausente:
-  - El script lo corrige mediante `update_aliases`.
-- Permisos / autenticación:
-  - Usa `OS_USER/OS_PASS` o `ES_USER/ES_PASS`.
-- Validación previa:
-  - Usa `--dry-run` para ver si las condiciones gatillarían un rollover sin crear índices.
+3. Ver settings índice actual:
+```bash
+curl -s $OPENSEARCH_HOST/logs-delawarehotel-000001/_settings | jq '.[] | .settings | {policy_id: ."opendistro.index_state_management.policy_id", rollover_alias: ."index.lifecycle.rollover_alias"}'
+```
 
-## Variables de entorno relevantes
+### Cómo ocurre el rollover automático
 
-- `OPENSEARCH_HOST` (o `ELASTICSEARCH_HOST`): host:puerto o URL completa
-- `OS_USER`/`OS_PASS` (o `ES_USER`/`ES_PASS`): credenciales
-- `ROLLOVER_SHARDS`/`ROLLOVER_REPLICAS`: valores por defecto para `--shards` y `--replicas`
+Cuando el índice write (`is_write_index=true`) cumple las condiciones:
+- Edad ≥ `min_index_age`
+- Tamaño ≥ `min_size`
+- Documentos ≥ `min_doc_count`
+
+El plugin crea `logs-<tenant>-00000N+1`, mueve el alias de escritura y el índice anterior queda “sellado”.
+
+### Estado y Depuración
+
+Ver estado ISM de un índice:
+```bash
+curl -s $OPENSEARCH_HOST/_plugins/_ism/explain/logs-delawarehotel-000001 | jq .
+```
+
+Respuesta típica:
+```json
+{
+  "logs-delawarehotel-000001": {
+    "index.plugins.index_state_management.policy_id": "logs-delawarehotel-policy",
+    "index_state_management": {
+      "name": "hot",
+      "start_time": 1700000000000,
+      "managed": true,
+      "policy_id": "logs-delawarehotel-policy"
+    }
+  }
+}
+```
+
+### Eliminación automática
+
+Índices cumplirán transición a estado `delete` cuando la edad supere `delete_after_age`. El estado `delete` ejecuta acción `delete`.
+
+### Cambiar parámetros de la política
+
+Actualizar política (reaplicar con nuevos valores):
+```bash
+python scripts/apply_ism_policy.py --tenant delawarehotel --min-index-age-rollover 12h --min-size-rollover 10gb --min-docs-rollover 2000000 --delete-after-age 14d
+```
+
+### Precauciones
+
+- Reducir demasiado las condiciones puede crear muchos índices (impacto en administración).
+- Asegurar que el alias `logs-<tenant>` existe antes si migras desde un entorno manual.
+- En entornos con multi-tenant masivo, evaluar separar políticas por clase de tenant (gold/silver/bronze) para evitar docenas de políticas independientes.
+
+## 3. Ejemplo de Política Genérica
+
+Archivo: `policies/ism_logs_generic.json` (base para copiar).
+Cambiar `index_patterns` o aplicar por script para tenants específicos.
+
+## 4. Limpieza Manual (Si no se usa ISM delete)
+
+Para eliminar índices antiguos sin política:
+```bash
+curl -XDELETE $OPENSEARCH_HOST/logs-delawarehotel-000001
+```
+Asegúrate que NO sea el índice write actual (`is_write_index=true`).
+
+## 5. Integración con Métricas
+
+Agregar un exporter o job que recoja:
+```bash
+/_cat/indices/logs-<tenant>-*?bytes=gb&h=index,docsCount,storeSize
+```
+y convierta a métricas Prometheus (custom script) para ver crecimiento y disparadores futuros.
+
+## 6. Próximos Pasos Recomendados
+
+- Añadir script `scripts/explain_ism.py` para listar estado de todos los índices.
+- Panel Grafana: docsCount vs tiempo + número de índices por tenant.
+- Consolidar rotación de alias en un health-check diario (verifica que write_index está marcado).
+
+---
+Última actualización: (rellenar fecha en commit)
