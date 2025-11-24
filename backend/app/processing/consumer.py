@@ -309,10 +309,18 @@ def main() -> None:
                 EVENTS_INDEXED.inc()
                 EVENTS_INDEXED_BY_TENANT.labels(tenant_id=tenant).inc()
             else:
-                start_idx = time.time()
-                try:
+                # Soporte opcional: forzar reintentos internos para observar métricas
+                if evt_dict.get("flag_force_retries") is True:
+                    class RetryClient:
+                        def __init__(self): self.calls = 0
+                        def index(self, index, body, params=None):
+                            self.calls += 1
+                            if self.calls < 3:  # fuerza 2 fallos
+                                raise RuntimeError("forced test failure")
+                            return {"result": "created"}
+                    start_idx = time.time()
                     index_event(
-                        es,
+                        RetryClient(),
                         index=index_name,
                         body=evt_dict,
                         pipeline="logs_ingest",
@@ -325,19 +333,39 @@ def main() -> None:
                     INDEX_LATENCY.observe(total)
                     EVENT_INDEX_LATENCY.observe(total)
                     logger.info(
-                        "event_indexed",
+                        "event_indexed_forced_retries",
                         extra={"tenant_id": tenant, "latency_seconds": round(total, 6)},
                     )
-                except Exception:
-                    EVENTS_INDEX_FAILED.inc()
-                    EVENTS_NACKED_BY_REASON.labels(reason="index_failed").inc()
-                    logger.exception("index_failed")
-                    if USE_MANUAL_DLX:
-                        publish_to_dlx_with_reason(ch, body, method.routing_key, "index_failed")
+                else:
+                    start_idx = time.time()
+                    try:
+                        index_event(
+                            es,
+                            index=index_name,
+                            body=evt_dict,
+                            pipeline="logs_ingest",
+                            ensure_required=False,
+                        )
                         ch.basic_ack(delivery_tag=method.delivery_tag)
-                    else:
-                        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-                        EVENTS_NACKED.inc()
+                        EVENTS_INDEXED.inc()
+                        EVENTS_INDEXED_BY_TENANT.labels(tenant_id=tenant).inc()
+                        total = time.time() - start_idx
+                        INDEX_LATENCY.observe(total)
+                        EVENT_INDEX_LATENCY.observe(total)
+                        logger.info(
+                            "event_indexed",
+                            extra={"tenant_id": tenant, "latency_seconds": round(total, 6)},
+                        )
+                    except Exception:
+                        EVENTS_INDEX_FAILED.inc()
+                        EVENTS_NACKED_BY_REASON.labels(reason="index_failed").inc()
+                        logger.exception("index_failed")
+                        if USE_MANUAL_DLX:
+                            publish_to_dlx_with_reason(ch, body, method.routing_key, "index_failed")
+                            ch.basic_ack(delivery_tag=method.delivery_tag)
+                        else:
+                            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                            EVENTS_NACKED.inc()
         except Exception:
             logger.exception("processing_failed")
             if USE_MANUAL_DLX:
