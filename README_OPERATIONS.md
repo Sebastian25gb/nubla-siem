@@ -1,49 +1,65 @@
-### Modos de ejecución (Host vs Docker)
+# Operaciones: Rollover de índices por tenant
 
-| Aspecto        | Host (venv)                      | Docker (contenedor backend)          |
-|----------------|----------------------------------|--------------------------------------|
-| RABBITMQ_HOST  | 127.0.0.1                        | rabbitmq                             |
-| ELASTICSEARCH_HOST / OpenSearch | 127.0.0.1:9201             | opensearch:9200                      |
-| Schema path    | backend/app/schema/ncs_schema_registry.json (o ruta absoluta) | igual dentro del contenedor |
-| Pipeline logs_ingest | Pre-creado vía API en host | Pre-creado vía docker-compose init (pendiente) |
-| Ejecución consumer | `python -m backend.app.processing.consumer` | `docker compose run --rm backend python -m backend.app.processing.consumer` |
+Este repositorio indexa en índices por tenant con alias `logs-<tenant>`. El script `scripts/rollover_tenant_index.py` automatiza:
+- Inicialización del primer índice y alias (`logs-<tenant>-000001` + alias `logs-<tenant>` con `is_write_index: true`)
+- Rollover con condiciones (`max_docs`, `max_size`, `max_age`), opcionalmente en `--dry-run`
 
-Para cambiar de modo:
-1. Ajustar .env a los hostnames adecuados.
-2. Verificar que puertos (5672, 9201) estén publicados si se usa Host.
-3. Reaplicar template y pipeline si se recrea OpenSearch.
+Requisitos:
+- OpenSearch accesible (por defecto `http://opensearch:9200`, configurable con `OPENSEARCH_HOST`)
+- Python con `opensearch-py` instalado (ya está en requirements)
 
-### Smoke test
+## Comandos básicos
 
-Ejecutar:
+Inicializar alias/índice si no existen:
+```bash
+python scripts/rollover_tenant_index.py --tenant delawarehotel --init --shards 1 --replicas 0
 ```
-python scripts/integration/smoke_pipeline.py
-```
-Criterios:
-- `severity_lowercase: true`
-- `invalid_in_dlq: true`
-- `pass: true`
-```markdown
-### Nuevas métricas (Commit 3)
 
-- normalizer_latency_seconds: tiempo de normalización por evento.
-- tenant_registry_size: número de tenants cargados.
-- bulk_errors_total: errores o partial errors en flush bulk.
-- os_index_retry (log): un intento de reintento de indexación.
-- os_index_failed_final (log): fallo definitivo tras agotar reintentos.
-````markdown name=README_OPERATIONS.md
-### Ingest Pipeline
-
-Script `scripts/setup_ingest_pipeline.py` crea/verifica el pipeline `logs_ingest`.
-Ejemplo:
-  OPENSEARCH_HOST=localhost:9201 python scripts/setup_ingest_pipeline.py --test '{"message":"hello","tenant_id":"default"}'
+Ver estado actual:
+```bash
+python scripts/rollover_tenant_index.py --tenant delawarehotel --check
 ```
-### Métricas de reintentos y latencia por evento (Commit 5)
 
-- index_retries_total: incrementa por cada reintento tras un fallo.
-- event_index_latency_seconds: latencia del documento (ruta no bulk).
-Logs relevantes:
-- os_index_retry: intento fallido (previo a reintento).
-- os_index_failed_final: fallo definitivo tras agotar reintentos.
-- event_indexed: incluye latency_seconds al indexar exitosamente.
+Simular rollover (no crea índice):
+```bash
+python scripts/rollover_tenant_index.py --tenant delawarehotel --rollover --dry-run --max-docs 1000000 --max-size 50gb --max-age 7d
 ```
+
+Ejecutar rollover real:
+```bash
+python scripts/rollover_tenant_index.py --tenant delawarehotel --rollover --max-docs 1000000 --max-size 50gb --max-age 7d
+```
+
+Notas:
+- El script asegura `is_write_index: true` en el índice de escritura del alias.
+- Si el alias existe sin `is_write_index`, lo corrige.
+- Los índices siguen el patrón `logs-<tenant>-000001`, `logs-<tenant>-000002`, ...
+
+## Sugerencia de automatización (cron)
+
+Ejemplo de cron diario con dry-run (solo simula y loguea):
+```cron
+0 2 * * * cd /srv/nubla-siem && /usr/bin/python3 scripts/rollover_tenant_index.py --tenant delawarehotel --rollover --dry-run --max-docs 15000000 --max-size 50gb --max-age 7d >> /var/log/nubla/rollover.log 2>&1
+```
+
+Y un job semanal real:
+```cron
+0 3 * * 0 cd /srv/nubla-siem && /usr/bin/python3 scripts/rollover_tenant_index.py --tenant delawarehotel --rollover --max-docs 15000000 --max-size 50gb --max-age 7d >> /var/log/nubla/rollover.log 2>&1
+```
+
+## Troubleshooting
+
+- 404 alias not found:
+  - Ejecuta `--init` antes del rollover.
+- `is_write_index` ausente:
+  - El script lo corrige mediante `update_aliases`.
+- Permisos / autenticación:
+  - Usa `OS_USER/OS_PASS` o `ES_USER/ES_PASS`.
+- Validación previa:
+  - Usa `--dry-run` para ver si las condiciones gatillarían un rollover sin crear índices.
+
+## Variables de entorno relevantes
+
+- `OPENSEARCH_HOST` (o `ELASTICSEARCH_HOST`): host:puerto o URL completa
+- `OS_USER`/`OS_PASS` (o `ES_USER`/`ES_PASS`): credenciales
+- `ROLLOVER_SHARDS`/`ROLLOVER_REPLICAS`: valores por defecto para `--shards` y `--replicas`
