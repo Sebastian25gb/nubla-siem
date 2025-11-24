@@ -186,6 +186,17 @@ def main() -> None:
             start_norm = time.time()
             raw_msg = json.loads(body)
             normalized = normalize(raw_msg)
+
+            # Leer flag de reintentos antes de prepare_event (prepare_event puede podar campos desconocidos)
+            FORCE_RETRIES = bool(
+                (
+                    isinstance(normalized, dict)
+                    and (
+                        normalized.get("flag_force_retries") is True
+                        or normalized.get("force_retries") is True
+                    )
+                )
+            )
             # Host→tenant mapping (override si tenant = default)
             try:
                 if isinstance(normalized, dict):
@@ -310,14 +321,18 @@ def main() -> None:
                 EVENTS_INDEXED_BY_TENANT.labels(tenant_id=tenant).inc()
             else:
                 # Soporte opcional: forzar reintentos internos para observar métricas
-                if evt_dict.get("flag_force_retries") is True:
+                if FORCE_RETRIES:
+
                     class RetryClient:
-                        def __init__(self): self.calls = 0
+                        def __init__(self):
+                            self.calls = 0
+
                         def index(self, index, body, params=None):
                             self.calls += 1
                             if self.calls < 3:  # fuerza 2 fallos
                                 raise RuntimeError("forced test failure")
                             return {"result": "created"}
+
                     start_idx = time.time()
                     index_event(
                         RetryClient(),
