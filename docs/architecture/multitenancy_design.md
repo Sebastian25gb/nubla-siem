@@ -1,40 +1,24 @@
-# Diseño de multitenencia
+```markdown
+# Multitenencia – Diseño Inicial
 
-## Principios
-- Tenant como primer ciudadano: presente en cada evento, métrica, permiso y recurso.
-- Aislamiento de datos, configuración (reglas, dashboards, playbooks) y recursos (quotas).
+## Objetivo
+Asegurar aislamiento lógico de eventos por cliente (tenant) y evitar contaminación cruzada de datos.
 
-## Identificación de tenant en ingesta
-- Métodos soportados (coexistentes):
-  - Token por tenant (recomendado MVP): validado en gateway.
-  - Listener/puerto dedicado por tenant (operativo para legacy).
-  - mTLS con mapeo CN/OU→tenant (opción enterprise).
-- Fallback por IP→tenant desaconsejado salvo casos muy controlados.
+## Estrategia de Índices
+- Índice por tenant: `logs-<tenant>` (alias/rollover opcional en producción).
+- Consumer escribe en `logs-<tenant>`.
 
-## Contrato de evento (NCS v1, inspirado en ECS)
-- Obligatorios: tenant_id, @timestamp UTC, dataset, category, severity, message, schema_version.
-- Recomendados: source/destination.*, user.*, labels, original.
-- Política: eventos sin tenant_id válido → rechazo y envío a DLQ con causa.
+## Validación
+- `tenant_id` obligatorio en cada evento.
+- Si falta → rechazo (`missing_tenant_id`) vía DLQ manual o NACK sin requeue.
+- No se autocompleta `tenant_id=default` en normalizador; solo se acepta si viene del productor.
 
-## Aislamiento de datos
-- Índices/data streams por tenant (y opcionalmente por dataset).
-- ISM por tenant (retención, replicas, rollover).
-- Seguridad nativa: roles por patrón de índice en OpenSearch Security.
+## Métricas
+- `events_indexed_by_tenant_total{tenant_id="x"}`
+- `events_nacked_by_reason_total{reason="missing_tenant_id"}`
 
-## Control de acceso
-- OIDC: tokens con claims de tenant y roles.
-- Backend: filtros forzados y auditoría por solicitud; scoping estricto por tenant.
-- Roles: owner/admin/analyst/viewer a nivel de tenant.
-
-## Quotas y límites
-- Ingesta: EPS máximo por tenant (control en gateway y monitorización).
-- Almacenamiento: cuota por tenant; retención configurada por SLA.
-- Consultas: límites de cardinalidad/tiempo y rate limits por tenant.
-
-## Observabilidad por tenant
-- Métricas etiquetadas: events_ingested_total, parse_errors_total, dlq_messages_total, ingest_latency p95, storage_bytes.
-- Dashboards: salud del pipeline por tenant; top fuentes ruidosas; costos estimados.
-
-## Operaciones
-- DLQ: inspección/replay filtrado por tenant; informes de calidad de datos.
-- Exportación: export de índices por tenant para portabilidad/cumplimiento.
+## Próximos pasos
+1. Añadir tabla de tenants válidos y verificación (unknown_tenant_id).
+2. Script de creación de índices/alias por tenant.
+3. Revisión de RBAC/roles en OpenSearch por tenant.
+```

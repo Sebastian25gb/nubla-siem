@@ -3,12 +3,14 @@
 Normalizador Fortinet extendido.
 Castea campos numéricos (puertos, count, crscore, pps) a int para cumplir con el schema.
 """
-
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-KV_RE = re.compile(r'(\w+)=(".*?"|[^"\s]+)')
+from backend.app.core.config import settings
+
+KV_RE = re.compile(r"(\w+)=(\".*?\"|[^\"\s]+)")
 PRI_RE = re.compile(r"^<\d+>")
 PPS_RE = re.compile(r"pps\s+(\d+)\b")
 
@@ -62,7 +64,24 @@ def normalize(raw: Dict[str, Any]) -> Dict[str, Any]:
     kv = parse_kv(cleaned)
     out["original"]["raw_kv"] = kv
 
-    out["tenant_id"] = raw.get("tenant_id", "default")
+    # tenant_id: no autocompletamos "default" siempre. Comportamiento:
+    # - Si ya viene en el evento raw, lo usamos.
+    # - Si no viene, por defecto en DEV/tests rellenamos desde settings.tenant_id
+    # - Si se activa REQUIRE_TENANT=true (modo estricto), NO rellenamos aquí.
+    tenant_raw = raw.get("tenant_id")
+    require_tenant = os.getenv("REQUIRE_TENANT", "false").lower() == "true"
+    if isinstance(tenant_raw, str) and tenant_raw.strip():
+        out["tenant_id"] = tenant_raw.strip()
+    else:
+        # Sólo autocompletamos en modo NO estricto y si settings tiene valor
+        if not require_tenant:
+            try:
+                default_tenant = getattr(settings, "tenant_id", None)
+            except Exception:
+                default_tenant = None
+            if default_tenant:
+                out["tenant_id"] = default_tenant
+
     out["dataset"] = raw.get("dataset", "syslog.generic")
     out["schema_version"] = raw.get("schema_version", "1.0.0")
 

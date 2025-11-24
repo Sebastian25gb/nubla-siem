@@ -1,16 +1,17 @@
+from __future__ import annotations
+
 import json
 import logging
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from jsonschema import Draft7Validator
-from prometheus_client import Counter, start_http_server
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 from backend.app.core.config import settings
 from backend.app.core.logging import configure_logging
 from backend.app.infrastructure.rabbitmq import get_channel
-from backend.app.processing.bulk_indexer import INDEX_LATENCY, BulkIndexer
 from backend.app.processing.normalizer import normalize
 from backend.app.processing.utils import prepare_event, top_validation_errors
 from backend.app.repository.elastic import get_es, index_event
@@ -23,6 +24,22 @@ EVENTS_NACKED = Counter("events_nacked_total", "Eventos enviados a DLX/DLQ")
 EVENTS_VALIDATION_FAILED = Counter("events_validation_failed_total", "Fallos de validación schema")
 EVENTS_INDEX_FAILED = Counter("events_index_failed_total", "Fallos indexación individual")
 EVENTS_BULK_FLUSHES = Counter("bulk_flushes_total", "Flush bulk realizados")
+
+# Etiquetadas
+EVENTS_INDEXED_BY_TENANT = Counter(
+    "events_indexed_by_tenant_total", "Eventos indexados por tenant", ["tenant_id"]
+)
+EVENTS_NACKED_BY_REASON = Counter(
+    "events_nacked_by_reason_total", "Eventos rechazados por razón", ["reason"]
+)
+
+# Métricas de latencia y buffer (siempre disponibles)
+INDEX_LATENCY = Histogram(
+    "index_latency_seconds",
+    "Latencia por flush bulk o documento individual",
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0),
+)
+BUFFER_SIZE = Gauge("consumer_buffer_size", "Número de eventos en buffer bulk")
 
 USE_MANUAL_DLX = os.getenv("USE_MANUAL_DLX", "false").lower() == "true"
 MANUAL_DLX_EXCHANGE = os.getenv("RABBITMQ_DLX", "logs_default.dlx")
@@ -76,6 +93,7 @@ def publish_to_dlx_with_reason(ch, body_bytes: bytes, routing_key: str, reason: 
         properties=props,
     )
     EVENTS_NACKED.inc()
+    EVENTS_NACKED_BY_REASON.labels(reason=reason).inc()
 
 
 def _normalize_severity(evt: Dict[str, Any]) -> None:
@@ -89,6 +107,30 @@ def _normalize_severity(evt: Dict[str, Any]) -> None:
             evt["severity"] = sev_low
 
 
+def validate_tenant(evt: Dict[str, Any]) -> bool:
+    """Returns True if tenant_id is present and non-empty string."""
+    t = evt.get("tenant_id")
+    return isinstance(t, str) and bool(t.strip())
+
+
+# Typing-only import for static analysis (Pylance, mypy)
+if TYPE_CHECKING:
+    # Importamos el tipo con otro nombre para evitar colisiones con la variable runtime
+    from backend.app.processing.bulk_indexer import (
+        BulkIndexer as BulkIndexerType,  # pragma: no cover
+    )
+
+# Runtime lazy import to avoid circulars or missing file issues
+try:
+    # Importamos la clase runtime con nombre distinto para NO sobrescribir el nombre del tipo
+    from backend.app.processing.bulk_indexer import BulkIndexer as _BulkIndexer  # type: ignore
+except Exception:
+    _BulkIndexer = None  # type: ignore
+
+# Anotación usando forward-reference al nombre del tipo (solo para análisis)
+bulk_indexer: Optional["BulkIndexerType"] = None
+
+
 def main() -> None:
     try:
         start_http_server(int(os.getenv("METRICS_PORT", "9109")))
@@ -98,9 +140,9 @@ def main() -> None:
 
     es = get_es()
 
-    bulk_indexer: Optional[BulkIndexer] = None
-    if USE_BULK:
-        bulk_indexer = BulkIndexer(
+    global bulk_indexer
+    if USE_BULK and _BulkIndexer is not None:
+        bulk_indexer = _BulkIndexer(
             client=es,
             max_items=BULK_MAX_ITEMS,
             max_interval_ms=BULK_MAX_INTERVAL_MS,
@@ -139,6 +181,26 @@ def main() -> None:
                 evt_dict = json.loads(json.dumps(normalized, default=str))
 
             _normalize_severity(evt_dict)
+
+            # Tenant validation: obligatorio en multitenancy estricta
+            if not validate_tenant(evt_dict):
+                EVENTS_VALIDATION_FAILED.inc()
+                logger.warning(
+                    "missing_tenant_id",
+                    extra={
+                        "raw_tenant": evt_dict.get("tenant_id"),
+                        "reject_reason": "missing_tenant_id",
+                    },
+                )
+                if USE_MANUAL_DLX:
+                    publish_to_dlx_with_reason(ch, body, method.routing_key, "missing_tenant_id")
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                else:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                    EVENTS_NACKED.inc()
+                    EVENTS_NACKED_BY_REASON.labels(reason="missing_tenant_id").inc()
+                return
+
             evt_dict = prepare_event(evt_dict)
 
             if validator is not None:
@@ -160,16 +222,17 @@ def main() -> None:
                     else:
                         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
                         EVENTS_NACKED.inc()
+                        EVENTS_NACKED_BY_REASON.labels(reason="validation_failed").inc()
                     return
 
             tenant = evt_dict.get("tenant_id") or "default"
             index_name = f"logs-{tenant}"
 
             if bulk_indexer:
-                # Buffer y ack anticipado tras agregar (riesgo mínimo de pérdida si bulk falla)
                 bulk_indexer.add(index=index_name, doc=evt_dict, pipeline="logs_ingest")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 EVENTS_INDEXED.inc()
+                EVENTS_INDEXED_BY_TENANT.labels(tenant_id=tenant).inc()
             else:
                 start_t = time.time()
                 try:
@@ -182,10 +245,12 @@ def main() -> None:
                     )
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                     EVENTS_INDEXED.inc()
+                    EVENTS_INDEXED_BY_TENANT.labels(tenant_id=tenant).inc()
                     INDEX_LATENCY.observe(time.time() - start_t)
                     logger.info("event_indexed", extra={"tenant_id": tenant})
                 except Exception:
                     EVENTS_INDEX_FAILED.inc()
+                    EVENTS_NACKED_BY_REASON.labels(reason="index_failed").inc()
                     logger.exception("index_failed")
                     if USE_MANUAL_DLX:
                         publish_to_dlx_with_reason(ch, body, method.routing_key, "index_failed")
