@@ -21,4 +21,24 @@ Asegurar aislamiento lógico de eventos por cliente (tenant) y evitar contaminac
 1. Añadir tabla de tenants válidos y verificación (unknown_tenant_id).
 2. Script de creación de índices/alias por tenant.
 3. Revisión de RBAC/roles en OpenSearch por tenant.
+```markdown
+## Tenant Registry y Onboarding
+
+El registro de tenants (`config/tenants.json`) soporta:
+- Lista de strings: ["default","acme"]
+- Lista de objetos con metadata:
+  [
+    {"id":"default","status":"active","valid_from":"..."},
+    {"id":"acme","status":"active","valid_from":"..."}
+  ]
+
+Script de onboarding:
+  python scripts/onboard_tenant.py <tenant_id>
+
+Acciones:
+- Añade el tenant al registry si no existe.
+- Crea el índice inicial `logs-<tenant>-000001` y alias `logs-<tenant>`.
+
+Recomendación:
+- Integrar el script en CI/CD de alta de clientes.
 ```

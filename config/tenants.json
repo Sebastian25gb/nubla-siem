@@ -1,5 +1,17 @@
 [
-  "default",
-  "acme",
-  "delawarehotel"
+  {
+    "id": "default",
+    "status": "active",
+    "valid_from": "2025-11-01T00:00:00Z"
+  },
+  {
+    "id": "acme",
+    "status": "active",
+    "valid_from": "2025-11-01T00:00:00Z"
+  },
+  {
+    "id": "delawarehotel",
+    "status": "active",
+    "valid_from": "2025-11-01T00:00:00Z"
+  }
 ]
