@@ -12,6 +12,7 @@ from prometheus_client import Counter, Gauge, Histogram, start_http_server
 from backend.app.core.config import settings
 from backend.app.core.logging import configure_logging
 from backend.app.infrastructure.rabbitmq import get_channel
+from backend.app.metrics.counters import INDEX_RETRIES  # siembra 0 al inicio en main()
 from backend.app.processing.normalizer import normalize
 from backend.app.processing.tenant_registry import get_registry, is_valid_tenant
 from backend.app.processing.utils import prepare_event, top_validation_errors
@@ -19,6 +20,7 @@ from backend.app.repository.elastic import get_es, index_event
 
 logger = logging.getLogger(__name__)
 
+# Counters
 EVENTS_PROCESSED = Counter("events_processed_total", "Total events consumidos")
 EVENTS_INDEXED = Counter("events_indexed_total", "Eventos indexados (unitarios o bulk)")
 EVENTS_NACKED = Counter("events_nacked_total", "Eventos enviados a DLX/DLQ")
@@ -33,6 +35,7 @@ EVENTS_NACKED_BY_REASON = Counter(
     "events_nacked_by_reason_total", "Eventos rechazados por razón", ["reason"]
 )
 
+# Histograms / Gauges
 INDEX_LATENCY = Histogram(
     "index_latency_seconds",
     "Latencia por flush bulk o documento individual",
@@ -52,6 +55,7 @@ NORMALIZER_LATENCY = Histogram(
 )
 TENANT_REGISTRY_SIZE = Gauge("tenant_registry_size", "Número de tenants registrados")
 
+# Env toggles
 USE_MANUAL_DLX = os.getenv("USE_MANUAL_DLX", "false").lower() == "true"
 MANUAL_DLX_EXCHANGE = os.getenv("RABBITMQ_DLX", "logs_default.dlx")
 
@@ -139,6 +143,8 @@ def validate_tenant(evt: Dict[str, Any]) -> bool:
 def main() -> None:
     try:
         start_http_server(int(os.getenv("METRICS_PORT", "9109")))
+        # semilla de métricas visibles aunque estén en 0
+        INDEX_RETRIES.inc(0)
         logger.info("metrics_server_started", extra={"port": os.getenv("METRICS_PORT", "9109")})
     except Exception:
         logger.warning("metrics_server_failed", exc_info=True)
@@ -187,16 +193,24 @@ def main() -> None:
             raw_msg = json.loads(body)
             normalized = normalize(raw_msg)
 
-            # Leer flag de reintentos antes de prepare_event (prepare_event puede podar campos desconocidos)
             # Leer flag de reintentos antes de prepare_event (y también desde raw_msg)
-            FORCE_RETRIES = bool(\n    (isinstance(normalized, dict) and (\n        normalized.get("flag_force_retries") is True or normalized.get("force_retries") is True\n    )) or\n    (isinstance(raw_msg, dict) and (\n        raw_msg.get("flag_force_retries") is True or raw_msg.get("force_retries") is True\n    ))\n)
-                (isinstance(normalized, dict) and (
-                    normalized.get("flag_force_retries") is True or normalized.get("force_retries") is True
-                )) or
-                (isinstance(raw_msg, dict) and (
-                    raw_msg.get("flag_force_retries") is True or raw_msg.get("force_retries") is True
-                ))
+            FORCE_RETRIES = bool(
+                (
+                    isinstance(normalized, dict)
+                    and (
+                        normalized.get("flag_force_retries") is True
+                        or normalized.get("force_retries") is True
+                    )
+                )
+                or (
+                    isinstance(raw_msg, dict)
+                    and (
+                        raw_msg.get("flag_force_retries") is True
+                        or raw_msg.get("force_retries") is True
+                    )
+                )
             )
+
             # Host→tenant mapping (override si tenant = default)
             try:
                 if isinstance(normalized, dict):
@@ -229,6 +243,7 @@ def main() -> None:
             finally:
                 NORMALIZER_LATENCY.observe(time.time() - start_norm)
 
+            # convertir a dict serializable
             if isinstance(normalized, dict):
                 evt_dict = dict(normalized)
             else:
@@ -238,3 +253,195 @@ def main() -> None:
 
             if REQUIRE_TENANT and not validate_tenant(evt_dict):
                 EVENTS_VALIDATION_FAILED.inc()
+                logger.warning(
+                    "missing_tenant_id",
+                    extra={
+                        "raw_tenant": evt_dict.get("tenant_id"),
+                        "reject_reason": "missing_tenant_id",
+                    },
+                )
+                if USE_MANUAL_DLX:
+                    publish_to_dlx_with_reason(ch, body, method.routing_key, "missing_tenant_id")
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                else:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                    EVENTS_NACKED.inc()
+                    EVENTS_NACKED_BY_REASON.labels(reason="missing_tenant_id").inc()
+                return
+
+            evt_dict = prepare_event(evt_dict)
+
+            if not REQUIRE_TENANT and not validate_tenant(evt_dict):
+                EVENTS_VALIDATION_FAILED.inc()
+                logger.warning(
+                    "missing_tenant_id_after_prepare",
+                    extra={
+                        "raw_tenant": evt_dict.get("tenant_id"),
+                        "reject_reason": "missing_tenant_id",
+                    },
+                )
+                if USE_MANUAL_DLX:
+                    publish_to_dlx_with_reason(ch, body, method.routing_key, "missing_tenant_id")
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                else:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                    EVENTS_NACKED.inc()
+                    EVENTS_NACKED_BY_REASON.labels(reason="missing_tenant_id").inc()
+                return
+
+            if validator is not None:
+                errors = list(validator.iter_errors(evt_dict))
+                if errors:
+                    EVENTS_VALIDATION_FAILED.inc()
+                    logger.warning(
+                        "validation_failed",
+                        extra={
+                            "tenant_id": evt_dict.get("tenant_id"),
+                            "errors": top_validation_errors(errors),
+                        },
+                    )
+                    if USE_MANUAL_DLX:
+                        publish_to_dlx_with_reason(
+                            ch, body, method.routing_key, "validation_failed"
+                        )
+                        ch.basic_ack(delivery_tag=method.delivery_tag)
+                    else:
+                        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                        EVENTS_NACKED.inc()
+                        EVENTS_NACKED_BY_REASON.labels(reason="validation_failed").inc()
+                    return
+
+            tenant = evt_dict.get("tenant_id") or "default"
+            if not is_valid_tenant(tenant):
+                EVENTS_VALIDATION_FAILED.inc()
+                logger.warning(
+                    "unknown_tenant_id",
+                    extra={"tenant_id": tenant, "reject_reason": "unknown_tenant_id"},
+                )
+                if USE_MANUAL_DLX:
+                    publish_to_dlx_with_reason(ch, body, method.routing_key, "unknown_tenant_id")
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                else:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                    EVENTS_NACKED.inc()
+                    EVENTS_NACKED_BY_REASON.labels(reason="unknown_tenant_id").inc()
+                return
+
+            index_name = f"logs-{tenant}"
+
+            if bulk_indexer:
+                bulk_indexer.add(index=index_name, doc=evt_dict, pipeline="logs_ingest")
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                EVENTS_INDEXED.inc()
+                EVENTS_INDEXED_BY_TENANT.labels(tenant_id=tenant).inc()
+            else:
+                # Hook opcional para forzar reintentos y validar métricas
+                if FORCE_RETRIES:
+
+                    class RetryClient:
+                        def __init__(self):
+                            self.calls = 0
+
+                        def index(self, index, body, params=None):
+                            self.calls += 1
+                            if self.calls < 3:
+                                raise RuntimeError("forced test failure")
+                            return {"result": "created"}
+
+                    start_idx = time.time()
+                    index_event(
+                        RetryClient(),
+                        index=index_name,
+                        body=evt_dict,
+                        pipeline="logs_ingest",
+                        ensure_required=False,
+                    )
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                    EVENTS_INDEXED.inc()
+                    EVENTS_INDEXED_BY_TENANT.labels(tenant_id=tenant).inc()
+                    total = time.time() - start_idx
+                    INDEX_LATENCY.observe(total)
+                    EVENT_INDEX_LATENCY.observe(total)
+                    logger.info(
+                        "event_indexed_forced_retries",
+                        extra={"tenant_id": tenant, "latency_seconds": round(total, 6)},
+                    )
+                else:
+                    start_idx = time.time()
+                    try:
+                        index_event(
+                            es,
+                            index=index_name,
+                            body=evt_dict,
+                            pipeline="logs_ingest",
+                            ensure_required=False,
+                        )
+                        ch.basic_ack(delivery_tag=method.delivery_tag)
+                        EVENTS_INDEXED.inc()
+                        EVENTS_INDEXED_BY_TENANT.labels(tenant_id=tenant).inc()
+                        total = time.time() - start_idx
+                        INDEX_LATENCY.observe(total)
+                        EVENT_INDEX_LATENCY.observe(total)
+                        logger.info(
+                            "event_indexed",
+                            extra={"tenant_id": tenant, "latency_seconds": round(total, 6)},
+                        )
+                    except Exception:
+                        EVENTS_INDEX_FAILED.inc()
+                        EVENTS_NACKED_BY_REASON.labels(reason="index_failed").inc()
+                        logger.exception("index_failed")
+                        if USE_MANUAL_DLX:
+                            publish_to_dlx_with_reason(ch, body, method.routing_key, "index_failed")
+                            ch.basic_ack(delivery_tag=method.delivery_tag)
+                        else:
+                            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                            EVENTS_NACKED.inc()
+        except Exception:
+            logger.exception("processing_failed")
+            if USE_MANUAL_DLX:
+                publish_to_dlx_with_reason(
+                    ch, body, getattr(method, "routing_key", "unknown"), "processing_exception"
+                )
+                try:
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                except Exception:
+                    pass
+            else:
+                try:
+                    ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+                    EVENTS_NACKED.inc()
+                except Exception:
+                    pass
+
+    channel.basic_qos(prefetch_count=CONSUMER_PREFETCH)
+    channel.basic_consume(queue=queue_name, on_message_callback=handle, auto_ack=False)
+    logger.info(
+        "consumer_started",
+        extra={
+            "queue": queue_name,
+            "exchange": exchange,
+            "manual_dlx": USE_MANUAL_DLX,
+            "bulk": USE_BULK,
+            "prefetch": CONSUMER_PREFETCH,
+        },
+    )
+    try:
+        channel.start_consuming()
+    except KeyboardInterrupt:
+        channel.stop_consuming()
+    finally:
+        if bulk_indexer:
+            try:
+                bulk_indexer.flush()
+                EVENTS_BULK_FLUSHES.inc()
+            except Exception:
+                logger.exception("final_bulk_flush_failed")
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+
+if __name__ == "__main__":
+    configure_logging(level=os.getenv("LOG_LEVEL", "INFO"))
+    main()
