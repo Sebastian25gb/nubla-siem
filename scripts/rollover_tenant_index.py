@@ -9,11 +9,9 @@ from typing import Any, Dict, List, Optional
 
 from opensearchpy import NotFoundError  # type: ignore
 
-# Reutilizamos la conexión del backend
 try:
     from backend.app.repository.elastic import get_es
 except Exception:
-    # Fallback simple si se usa el script fuera del entorno del backend
     from opensearchpy import OpenSearch  # type: ignore
 
     def _normalize_url(raw: Optional[str]) -> str:
@@ -49,12 +47,12 @@ except Exception:
 logger = logging.getLogger("rollover")
 
 
-def index_name_for(tenant: str, seq: int) -> str:
-    return f"logs-{tenant}-{seq:06d}"
-
-
 def alias_for(tenant: str) -> str:
     return f"logs-{tenant}"
+
+
+def index_name_for(tenant: str, seq: int) -> str:
+    return f"{alias_for(tenant)}-{seq:06d}"
 
 
 def get_alias_indices(es, alias: str) -> List[str]:
@@ -68,21 +66,51 @@ def get_alias_indices(es, alias: str) -> List[str]:
         raise
 
 
-def ensure_initial_index_and_alias(
-    es,
-    tenant: str,
-    shards: int = 1,
-    replicas: int = 0,
-) -> str:
-    a = alias_for(tenant)
-    indices = get_alias_indices(es, a)
+def ensure_write_index_flag(
+    es, alias: str, expected_write_index: str, all_indices: Optional[List[str]] = None
+) -> None:
+    if all_indices is None:
+        all_indices = get_alias_indices(es, alias)
+    if not all_indices:
+        return
+
+    # Leer estado actual
+    alias_data = es.indices.get_alias(name=alias)  # type: ignore
+    current_write = None
+    for idx, meta in alias_data.items():
+        info = meta.get("aliases", {}).get(alias, {})
+        if info.get("is_write_index") is True:
+            current_write = idx
+            break
+
+    # Si ya coincide, nada que hacer
+    if current_write == expected_write_index:
+        logger.info("write_index_already_ok", extra={"alias": alias, "write_index": current_write})
+        return
+
+    # Reconstruir alias sin must_exist
+    actions: List[Dict[str, Any]] = []
+    # remove alias de todos
+    for idx in all_indices:
+        actions.append({"remove": {"index": idx, "alias": alias}})
+    # add alias a todos, marcando write_index al esperado
+    for idx in all_indices:
+        if idx == expected_write_index:
+            actions.append({"add": {"index": idx, "alias": alias, "is_write_index": True}})
+        else:
+            actions.append({"add": {"index": idx, "alias": alias}})
+
+    es.indices.update_aliases({"actions": actions})  # type: ignore
+    logger.info("write_index_set", extra={"alias": alias, "write_index": expected_write_index})
+
+
+def ensure_initial_index_and_alias(es, tenant: str, shards: int = 1, replicas: int = 0) -> str:
+    alias = alias_for(tenant)
+    indices = get_alias_indices(es, alias)
     if indices:
-        # Asegura que exista write_index
-        ensure_write_index_flag(es, a, indices[-1], indices)
-        logger.info("alias_exists", extra={"alias": a, "indices": indices})
+        ensure_write_index_flag(es, alias, indices[-1], indices)
         return indices[-1]
 
-    # Crear índice inicial y alias con write_index
     first = index_name_for(tenant, 1)
     body = {
         "settings": {
@@ -91,46 +119,9 @@ def ensure_initial_index_and_alias(
         }
     }
     es.indices.create(index=first, body=body)  # type: ignore
-    es.indices.put_alias(index=first, name=a, body={"is_write_index": True})  # type: ignore
-    logger.info("alias_initialized", extra={"alias": a, "index": first})
+    es.indices.put_alias(index=first, name=alias, body={"is_write_index": True})  # type: ignore
+    logger.info("alias_initialized", extra={"alias": alias, "index": first})
     return first
-
-
-def ensure_write_index_flag(
-    es, alias: str, write_index: str, all_indices: Optional[List[str]] = None
-) -> None:
-    if all_indices is None:
-        all_indices = get_alias_indices(es, alias)
-    actions: List[Dict[str, Any]] = []
-
-    # Quitar is_write_index de todos
-    for idx in all_indices:
-        actions.append({"remove": {"index": idx, "alias": alias, "must_exist": False}})
-
-    # Volver a agregarlos sin flag, y al write_index con flag
-    for idx in all_indices:
-        if idx == write_index:
-            actions.append({"add": {"index": idx, "alias": alias, "is_write_index": True}})
-        else:
-            actions.append({"add": {"index": idx, "alias": alias}})
-
-    if actions:
-        es.indices.update_aliases({"actions": actions})  # type: ignore
-        logger.info("write_index_set", extra={"alias": alias, "write_index": write_index})
-
-
-def next_sequence_from(indices: List[str], tenant: str) -> int:
-    # Busca el mayor sufijo numérico logs-<tenant>-000123 -> 123
-    seq = 0
-    prefix = f"logs-{tenant}-"
-    for idx in indices:
-        if idx.startswith(prefix):
-            try:
-                num = int(idx[len(prefix) :])
-                seq = max(seq, num)
-            except ValueError:
-                pass
-    return seq + 1
 
 
 def do_rollover(
@@ -141,9 +132,9 @@ def do_rollover(
     max_age: Optional[str],
     dry_run: bool,
 ) -> Dict[str, Any]:
-    a = alias_for(tenant)
-    # Asegura que haya alias e índice inicial
+    alias = alias_for(tenant)
     ensure_initial_index_and_alias(es, tenant)
+
     conditions: Dict[str, Any] = {}
     if max_docs is not None:
         conditions["max_docs"] = max_docs
@@ -151,24 +142,24 @@ def do_rollover(
         conditions["max_size"] = max_size
     if max_age:
         conditions["max_age"] = max_age
-    body = {"conditions": conditions or {"max_docs": 1_000_000}}
+    if not conditions:
+        # fallback razonable
+        conditions["max_docs"] = 1_000_000
 
-    # opensearch-py rollover: es.indices.rollover(alias=..., body=..., dry_run=True/False)
-    resp = es.indices.rollover(alias=a, body=body, dry_run=dry_run)  # type: ignore
+    body = {"conditions": conditions}
+    resp = es.indices.rollover(alias=alias, body=body, dry_run=dry_run)  # type: ignore
     return resp
 
 
 def check_status(es, tenant: str) -> Dict[str, Any]:
-    a = alias_for(tenant)
-    data: Dict[str, Any] = {"alias": a, "indices": []}
-    indices = get_alias_indices(es, a)
-    data["indices"] = indices
+    alias = alias_for(tenant)
+    indices = get_alias_indices(es, alias)
+    data: Dict[str, Any] = {"alias": alias, "indices": indices}
     if indices:
-        # Detectar cuál es write_index
-        alias_data = es.indices.get_alias(name=a)  # type: ignore
+        alias_data = es.indices.get_alias(name=alias)  # type: ignore
         write = None
-        for idx, aliases in alias_data.items():
-            info = aliases.get("aliases", {}).get(a, {})
+        for idx, meta in alias_data.items():
+            info = meta.get("aliases", {}).get(alias, {})
             if info.get("is_write_index") is True:
                 write = idx
                 break
@@ -177,33 +168,17 @@ def check_status(es, tenant: str) -> Dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description="Rollover de índices por tenant (OpenSearch/Elasticsearch)."
-    )
-    p.add_argument("--tenant", required=True, help="ID del tenant (p.ej., delawarehotel)")
-    p.add_argument("--init", action="store_true", help="Crear alias e índice inicial si no existen")
-    p.add_argument("--check", action="store_true", help="Mostrar estado actual del alias e índices")
+    p = argparse.ArgumentParser(description="Rollover de índices por tenant.")
+    p.add_argument("--tenant", required=True, help="ID tenant (p.ej. delawarehotel)")
+    p.add_argument("--init", action="store_true", help="Crear alias + índice inicial si no existen")
+    p.add_argument("--check", action="store_true", help="Mostrar estado actual alias/índices")
     p.add_argument("--rollover", action="store_true", help="Ejecutar rollover según condiciones")
-    p.add_argument("--dry-run", action="store_true", help="Simular rollover sin crear índice nuevo")
-    p.add_argument("--max-docs", type=int, default=None, help="Condición: máximo de documentos")
-    p.add_argument(
-        "--max-size", type=str, default=None, help="Condición: tamaño máximo (e.g., 50gb)"
-    )
-    p.add_argument(
-        "--max-age", type=str, default=None, help="Condición: antigüedad máxima (e.g., 7d)"
-    )
-    p.add_argument(
-        "--shards",
-        type=int,
-        default=int(os.getenv("ROLLOVER_SHARDS", "1")),
-        help="Shards del índice inicial",
-    )
-    p.add_argument(
-        "--replicas",
-        type=int,
-        default=int(os.getenv("ROLLOVER_REPLICAS", "0")),
-        help="Replicas del índice inicial",
-    )
+    p.add_argument("--dry-run", action="store_true", help="Simular rollover (no crea índice nuevo)")
+    p.add_argument("--max-docs", type=int, default=None)
+    p.add_argument("--max-size", type=str, default=None)
+    p.add_argument("--max-age", type=str, default=None)
+    p.add_argument("--shards", type=int, default=int(os.getenv("ROLLOVER_SHARDS", "1")))
+    p.add_argument("--replicas", type=int, default=int(os.getenv("ROLLOVER_REPLICAS", "0")))
     p.add_argument("--log-level", default=os.getenv("LOG_LEVEL", "INFO"))
     return p.parse_args()
 
@@ -211,7 +186,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     logging.basicConfig(
-        level=getattr(logging, str(args.log_level).upper(), logging.INFO), format="%(message)s"
+        level=getattr(logging, str(args.log_level).upper(), logging.INFO),
+        format="%(message)s",
     )
     es = get_es()
 
