@@ -61,10 +61,10 @@ def put_pipeline(url: str, name: str, definition: dict):
 
 
 def simulate(url: str, name: str, doc: dict):
-    payload = {"pipeline": name, "docs": [{"_source": doc}]}
+    payload = {"docs": [{"_source": doc}]}
     data = json.dumps(payload).encode("utf-8")
     req = request.Request(
-        f"{url}/_ingest/pipeline/_simulate",
+        f"{url}/_ingest/pipeline/{name}/_simulate",
         method="POST",
         headers={"Content-Type": "application/json"},
         data=data,
