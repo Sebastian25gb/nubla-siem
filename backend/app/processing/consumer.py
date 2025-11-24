@@ -38,6 +38,11 @@ INDEX_LATENCY = Histogram(
     "Latencia por flush bulk o documento individual",
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0),
 )
+EVENT_INDEX_LATENCY = Histogram(
+    "event_index_latency_seconds",
+    "Latencia de indexación por evento unitario (no bulk)",
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
+)
 BUFFER_SIZE = Gauge("consumer_buffer_size", "Número de eventos en buffer bulk")
 
 NORMALIZER_LATENCY = Histogram(
@@ -329,8 +334,13 @@ def main() -> None:
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                     EVENTS_INDEXED.inc()
                     EVENTS_INDEXED_BY_TENANT.labels(tenant_id=tenant).inc()
-                    INDEX_LATENCY.observe(time.time() - start_t)
-                    logger.info("event_indexed", extra={"tenant_id": tenant})
+                    total = time.time() - start_t
+                    INDEX_LATENCY.observe(total)
+                    EVENT_INDEX_LATENCY.observe(total)
+                    logger.info(
+                        "event_indexed",
+                        extra={"tenant_id": tenant, "latency_seconds": round(total, 6)},
+                    )
                 except Exception:
                     EVENTS_INDEX_FAILED.inc()
                     EVENTS_NACKED_BY_REASON.labels(reason="index_failed").inc()

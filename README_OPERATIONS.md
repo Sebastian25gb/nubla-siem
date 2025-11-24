@@ -32,11 +32,18 @@ Criterios:
 - os_index_retry (log): un intento de reintento de indexación.
 - os_index_failed_final (log): fallo definitivo tras agotar reintentos.
 ````markdown name=README_OPERATIONS.md
-```markdown
-```markdown
 ### Ingest Pipeline
 
 Script `scripts/setup_ingest_pipeline.py` crea/verifica el pipeline `logs_ingest`.
 Ejemplo:
   OPENSEARCH_HOST=localhost:9201 python scripts/setup_ingest_pipeline.py --test '{"message":"hello","tenant_id":"default"}'
+```
+### Métricas de reintentos y latencia por evento (Commit 5)
+
+- index_retries_total: incrementa por cada reintento tras un fallo.
+- event_index_latency_seconds: latencia del documento (ruta no bulk).
+Logs relevantes:
+- os_index_retry: intento fallido (previo a reintento).
+- os_index_failed_final: fallo definitivo tras agotar reintentos.
+- event_indexed: incluye latency_seconds al indexar exitosamente.
 ```

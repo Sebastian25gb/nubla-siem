@@ -4,6 +4,7 @@ import time
 from typing import Any, Dict, Optional, Tuple
 
 from backend.app.core.config import settings
+from backend.app.metrics.counters import INDEX_RETRIES
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,7 @@ def index_event(
             if attempt == retries:
                 logger.exception("os_index_failed_final", extra={"index": index, "error": str(e)})
                 raise
+            INDEX_RETRIES.inc()
             time.sleep(backoff_seconds * (attempt + 1))
             attempt += 1
     raise last_err if last_err else RuntimeError("Unknown indexing failure")
