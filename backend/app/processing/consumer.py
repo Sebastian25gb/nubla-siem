@@ -301,7 +301,7 @@ def main() -> None:
                     EVENTS_NACKED_BY_REASON.labels(reason="unknown_tenant_id").inc()
                 return
 
-            index_name = f"logs-{tenant}"
+            index_name = "logs-default"
 
             if bulk_indexer:
                 bulk_indexer.add(index=index_name, doc=evt_dict, pipeline="logs_ingest")

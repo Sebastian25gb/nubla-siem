@@ -1,31 +1,16 @@
-import json
 import logging
-from pathlib import Path
 from opensearchpy import OpenSearch
 
 logger = logging.getLogger(__name__)
 
-HOST_MAP_FILE = Path("config/host_tenant_map.json")
-
-def load_host_map():
-    if HOST_MAP_FILE.exists():
-        with HOST_MAP_FILE.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-def map_host_to_tenant(host: str) -> str:
-    hm = load_host_map()
-    return hm.get(host, "default")
-
-def ensure_tenant(es: OpenSearch, tenant_id: str, policy_id: str):
-    alias = f"logs-{tenant_id}"
-    index_initial = f"{alias}-000001"
+def ensure_default_tenant(es: OpenSearch):
+    alias = "logs-default"
+    index_initial = "logs-default-000001"
     try:
         es.indices.get_alias(name=alias)
-        logger.debug("alias_exists", extra={"tenant": tenant_id})
         return
     except Exception:
-        logger.info("alias_missing_bootstrap", extra={"tenant": tenant_id})
+        logger.info("alias_missing_bootstrap alias=logs-default")
 
     if not es.indices.exists(index=index_initial):
         es.indices.create(index=index_initial, body={
@@ -39,7 +24,7 @@ def ensure_tenant(es: OpenSearch, tenant_id: str, policy_id: str):
                 }
             }
         })
-        logger.info("index_created", extra={"tenant": tenant_id, "index": index_initial})
+        logger.info("index_created index=%s", index_initial)
 
     es.indices.put_alias(index=index_initial, name=alias, body={"is_write_index": True})
     es.indices.put_settings(index=index_initial, body={
@@ -47,12 +32,3 @@ def ensure_tenant(es: OpenSearch, tenant_id: str, policy_id: str):
             "opendistro.index_state_management.rollover_alias": alias
         }
     })
-    try:
-        es.transport.perform_request(
-            "POST",
-            f"/_plugins/_ism/add/{index_initial}",
-            body={"policy_id": policy_id}
-        )
-        logger.info("policy_attach_ok", extra={"tenant": tenant_id, "policy_id": policy_id})
-    except Exception as e:
-        logger.warning("policy_attach_failed", extra={"tenant": tenant_id, "error": str(e)})
