@@ -1,7 +1,7 @@
 {
   "policy": {
     "policy_id": "logs-delawarehotel-policy",
-    "description": "Rollover para tenant delawarehotel con retención extendida",
+    "description": "Rollover y retención extendida del tenant delawarehotel",
     "schema_version": 18,
     "default_state": "hot",
     "states": [

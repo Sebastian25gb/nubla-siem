@@ -1,7 +1,7 @@
 {
   "policy": {
     "policy_id": "logs-default-retention",
-    "description": "Retención rápida para índice default (dev), rollover por edad/tamaño moderado y delete a 7d",
+    "description": "Retención rápida para índice default (dev), rollover y delete a 7 días",
     "schema_version": 18,
     "default_state": "hot",
     "states": [

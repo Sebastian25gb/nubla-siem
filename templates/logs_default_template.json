@@ -7,10 +7,10 @@
         "number_of_shards": "1",
         "number_of_replicas": "0",
         "opendistro": {
-            "index_state_management": {
-                "policy_id": "logs-default-retention",
-                "rollover_alias": "logs-default"
-            }
+          "index_state_management": {
+            "policy_id": "logs-default-retention",
+            "rollover_alias": "logs-default"
+          }
         }
       }
     },
