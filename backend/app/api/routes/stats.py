@@ -1,18 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Path, Depends, HTTPException
 from backend.app.repository.elastic import get_es
 from backend.app.core.auth import get_current_user, ensure_tenant_access
 
 router = APIRouter()
 
 @router.get("/tenants/{tenant_id}/stats")
-def tenant_stats(
-    tenant_id: str = Path(...),
-    user=Depends(get_current_user),
-):
+def tenant_stats(tenant_id: str = Path(...), user=Depends(get_current_user)):
     ensure_tenant_access(tenant_id, user)
     es = get_es()
     alias = f"logs-{tenant_id}"
-
     try:
         alias_data = es.indices.get_alias(name=alias)
     except Exception:

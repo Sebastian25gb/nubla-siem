@@ -5,15 +5,10 @@ from backend.app.core.auth import get_current_user, ensure_tenant_access
 router = APIRouter()
 
 @router.get("/alias/state")
-def alias_state(
-    tenant: str = Query(...),
-    user=Depends(get_current_user),
-):
+def alias_state(tenant: str = Query(...), user=Depends(get_current_user)):
     ensure_tenant_access(tenant, user)
     es = get_es()
     alias = f"logs-{tenant}"
-
-    # Obtener alias
     try:
         alias_data = es.indices.get_alias(name=alias)
     except Exception:
@@ -27,13 +22,10 @@ def alias_state(
         if is_write:
             write_index = idx
 
-    # Explicación ISM del write index
     explain = None
     if write_index:
         try:
-            explain_raw = es.transport.perform_request(
-                "GET", f"/_plugins/_ism/explain/{write_index}"
-            )
+            explain_raw = es.transport.perform_request("GET", f"/_plugins/_ism/explain/{write_index}")
             explain = explain_raw.get(write_index)
         except Exception:
             explain = {"error": "explain_failed"}
