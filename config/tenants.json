@@ -1,22 +1,16 @@
-[
-  {
-    "id": "default",
-    "status": "active",
-    "valid_from": "2025-11-01T00:00:00Z"
-  },
-  {
-    "id": "acme",
-    "status": "active",
-    "valid_from": "2025-11-01T00:00:00Z"
-  },
-  {
-    "id": "delawarehotel",
-    "status": "active",
-    "valid_from": "2025-11-01T00:00:00Z"
-  },
-  {
-    "id": "fortinet-lab",
-    "status": "active",
-    "valid_from": "2025-11-24T16:50:21.711746+00:00"
-  }
-]
+{
+  "tenants": [
+    {
+      "id": "default",
+      "policy_id": "logs-default-retention",
+      "rollover_alias": "logs-default",
+      "active": true
+    },
+    {
+      "id": "delawarehotel",
+      "policy_id": "logs-delawarehotel-policy",
+      "rollover_alias": "logs-delawarehotel",
+      "active": true
+    }
+  ]
+}

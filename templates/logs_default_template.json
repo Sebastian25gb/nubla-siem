@@ -3,83 +3,28 @@
   "priority": 700,
   "template": {
     "settings": {
-      "number_of_shards": 1
+      "index": {
+        "number_of_shards": "1",
+        "number_of_replicas": "0",
+        "opendistro": {
+            "index_state_management": {
+                "policy_id": "logs-default-retention",
+                "rollover_alias": "logs-default"
+            }
+        }
+      }
     },
     "mappings": {
       "dynamic": true,
-      "dynamic_templates": [
-        {
-          "labels_as_keyword": {
-            "path_match": "labels.*",
-            "mapping": { "type": "keyword", "ignore_above": 256 }
-          }
-        }
-      ],
       "properties": {
         "tenant_id": { "type": "keyword" },
-        "schema_version": { "type": "keyword" },
-        "dataset": { "type": "keyword" },
         "severity": { "type": "keyword" },
-        "severity_original": { "type": "keyword" },
-        "host": { "type": "keyword" },
-        "host_name": { "type": "keyword" },
-        "message": { "type": "text" },
         "@timestamp": { "type": "date" },
-        "source": {
-          "properties": {
-            "ip": { "type": "ip" },
-            "port": { "type": "integer" },
-            "geo": {
-              "properties": {
-                "country_iso_code": { "type": "keyword" }
-              }
-            }
-          }
-        },
-        "destination": {
-          "properties": {
-            "ip": { "type": "ip" },
-            "port": { "type": "integer" },
-            "geo": {
-              "properties": {
-                "country_iso_code": { "type": "keyword" }
-              }
-            }
-          }
-        },
-        "network": {
-          "properties": {
-            "protocol": { "type": "keyword" }
-          }
-        },
-        "threat": {
-          "properties": {
-            "name": { "type": "keyword" },
-            "id": { "type": "keyword" },
-            "score": { "type": "integer" },
-            "action": { "type": "keyword" }
-          }
-        },
-        "rule": {
-          "properties": {
-            "id": { "type": "keyword" }
-          }
-        },
-        "event": {
-          "properties": {
-            "count": { "type": "long" }
-          }
-        },
-        "flow": {
-          "properties": {
-            "packets_per_second": { "type": "long" }
-          }
-        },
-        "labels": { "type": "object" },
+        "message": { "type": "text" },
         "original": {
           "properties": {
-            "message_raw": { "type": "text" },
-            "raw_kv": { "type": "object", "enabled": true }
+            "raw_kv": { "type": "object", "enabled": true },
+            "message_raw": { "type": "text" }
           }
         }
       }

@@ -157,5 +157,41 @@ y convierta a métricas Prometheus (custom script) para ver crecimiento y dispar
 - Panel Grafana: docsCount vs tiempo + número de índices por tenant.
 - Consolidar rotación de alias en un health-check diario (verifica que write_index está marcado).
 
----
-Última actualización: (rellenar fecha en commit)
+### Alias y Rollover (Centralización)
+
+Pasos para mantener un alias con un único write index:
+
+1. Ver alias:
+   ```bash
+   curl -s -u admin:admin "$OPENSEARCH_HOST/_alias/logs-default" | jq .
+   ```
+
+2. Normalizar (si más de un write):
+   ```bash
+   cat > fix_alias.json <<'EOF'
+   {
+     "actions": [
+       {"remove": {"index": "logs-default-000001", "alias": "logs-default"}},
+       {"add": {"index": "logs-default-000001", "alias": "logs-default", "is_write_index": false}},
+       {"remove": {"index": "logs-default-000002", "alias": "logs-default"}},
+       {"add": {"index": "logs-default-000002", "alias": "logs-default", "is_write_index": true}}
+     ]
+   }
+   EOF
+   curl -XPOST -u admin:admin "$OPENSEARCH_HOST/_aliases" -d @fix_alias.json
+   ```
+
+3. Evento de prueba:
+   ```bash
+   curl -XPOST -u admin:admin "$OPENSEARCH_HOST/logs-default/_doc?pipeline=logs_ingest" \
+     -H 'Content-Type: application/json' \
+     -d '{"@timestamp":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","tenant_id":"default","severity":"info","message":"test"}'
+   ```
+
+4. Ver count:
+   ```bash
+   curl -s -u admin:admin "$OPENSEARCH_HOST/logs-default-000002/_count"
+   ```
+
+### Snapshot previo a delete
+Ver sección scripts/snapshot_before_delete.py y programar cron diario.

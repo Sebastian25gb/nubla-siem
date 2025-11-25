@@ -1,0 +1,8 @@
+{
+  "actions": [
+    {"remove": {"index": "logs-default-000001", "alias": "logs-default"}},
+    {"add": {"index": "logs-default-000001", "alias": "logs-default", "is_write_index": false}},
+    {"remove": {"index": "logs-default-000002", "alias": "logs-default"}},
+    {"add": {"index": "logs-default-000002", "alias": "logs-default", "is_write_index": true}}
+  ]
+}

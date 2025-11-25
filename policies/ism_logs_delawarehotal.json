@@ -1,7 +1,7 @@
 {
   "policy": {
-    "policy_id": "logs-generic-policy",
-    "description": "Política genérica multi-tenant (dev) - rollover por edad y tamaño moderado",
+    "policy_id": "logs-delawarehotel-policy",
+    "description": "Rollover para tenant delawarehotel con retención extendida",
     "schema_version": 18,
     "default_state": "hot",
     "states": [
@@ -10,8 +10,8 @@
         "actions": [
           {
             "rollover": {
-              "min_index_age": "1d",
-              "min_size": "1gb"
+              "min_index_age": "12h",
+              "min_size": "5gb"
             }
           }
         ],
@@ -19,7 +19,7 @@
           {
             "state_name": "delete",
             "conditions": {
-              "min_index_age": "14d"
+              "min_index_age": "30d"
             }
           }
         ]
@@ -35,8 +35,8 @@
       }
     ],
     "ism_template": {
-      "index_patterns": ["logs-*-*"],
-      "priority": 10
+      "index_patterns": ["logs-delawarehotel-*"],
+      "priority": 150
     }
   }
 }

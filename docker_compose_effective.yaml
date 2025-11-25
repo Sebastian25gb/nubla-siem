@@ -1,0 +1,219 @@
+name: nubla-siem
+services:
+  backend-api:
+    build:
+      context: /root/nubla-siem
+      dockerfile: backend/app/Dockerfile
+    command:
+      - uvicorn
+      - backend.app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+        required: true
+      rabbitmq:
+        condition: service_healthy
+        required: true
+    environment:
+      LOG_LEVEL: INFO
+      OPENSEARCH_HOST: http://localhost:9201
+      PYTHONPATH: /app
+      RABBITMQ_EXCHANGE: logs_default
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PASSWORD: securepass
+      RABBITMQ_QUEUE: nubla_logs_default
+      RABBITMQ_ROUTING_KEY: nubla.log.default
+      RABBITMQ_USER: admin
+      TENANT_ID: default
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 8000
+        published: "8000"
+        protocol: tcp
+  backend-consumer:
+    build:
+      context: /root/nubla-siem
+      dockerfile: backend/app/Dockerfile
+    command:
+      - python
+      - -m
+      - backend.app.processing.consumer
+    depends_on:
+      opensearch:
+        condition: service_healthy
+        required: true
+      rabbitmq:
+        condition: service_healthy
+        required: true
+    environment:
+      BULK_MAX_INTERVAL_MS: "1000"
+      BULK_MAX_ITEMS: "200"
+      CONSUMER_PREFETCH: "5"
+      LOG_LEVEL: INFO
+      OPENSEARCH_HOST: opensearch:9200
+      PYTHONPATH: /app
+      RABBITMQ_EXCHANGE: logs_default
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PASSWORD: securepass
+      RABBITMQ_QUEUE: nubla_logs_default
+      RABBITMQ_ROUTING_KEY: nubla.log.default
+      RABBITMQ_USER: admin
+      TENANT_ID: default
+      USE_BULK: "false"
+    networks:
+      default: null
+  fluentd:
+    build:
+      context: /root/nubla-siem/ingestion
+      dockerfile: Dockerfile.fluentd
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+        required: true
+    environment:
+      RABBITMQ_EXCHANGE: logs_default
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PASSWORD: securepass
+      RABBITMQ_ROUTING_KEY: nubla.log.default
+      RABBITMQ_USER: admin
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 24224
+        published: "24224"
+        protocol: udp
+  metrics-exporter:
+    build:
+      context: /root/nubla-siem
+      dockerfile: Dockerfile
+    command:
+      - python
+      - docs/operational/metrics/exporter.py
+    depends_on:
+      opensearch:
+        condition: service_started
+        required: true
+    environment:
+      LOGS_ALIAS: logs-default
+      OS_URL: http://opensearch:9200
+      PORT: "9108"
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 9108
+        published: "9108"
+        protocol: tcp
+  opensearch:
+    environment:
+      OPENSEARCH_JAVA_OPTS: -Dpath.repo=/usr/share/opensearch/snapshots
+      bootstrap.memory_lock: "true"
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -fsS http://localhost:9200/_cluster/health | grep -E '"status":"(green|yellow)"' || exit 1
+      timeout: 5s
+      interval: 10s
+      retries: 10
+    image: opensearchproject/opensearch:2.9.0
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 9200
+        published: "9201"
+        protocol: tcp
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - type: bind
+        source: /tmp/es_snapshots
+        target: /usr/share/opensearch/snapshots
+        bind:
+          create_host_path: true
+      - type: volume
+        source: opensearch_data
+        target: /usr/share/opensearch/data
+        volume: {}
+  rabbitmq:
+    environment:
+      RABBITMQ_DEFAULT_PASS: securepass
+      RABBITMQ_DEFAULT_USER: admin
+    healthcheck:
+      test:
+        - CMD
+        - rabbitmqctl
+        - status
+      timeout: 5s
+      interval: 5s
+      retries: 10
+    image: rabbitmq:3-management
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        host_ip: 127.0.0.1
+        target: 5672
+        published: "5672"
+        protocol: tcp
+      - mode: ingress
+        host_ip: 127.0.0.1
+        target: 15672
+        published: "15672"
+        protocol: tcp
+    volumes:
+      - type: volume
+        source: rabbitmq_data
+        target: /var/lib/rabbitmq
+        volume: {}
+  rabbitmq-init:
+    command:
+      - /scripts/load_definitions.sh
+    depends_on:
+      rabbitmq:
+        condition: service_started
+        required: true
+    entrypoint:
+      - /bin/sh
+      - -c
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_MGMT_PORT: "15672"
+      RABBITMQ_PASSWORD: securepass
+      RABBITMQ_USER: admin
+    image: curlimages/curl:8.3.0
+    networks:
+      default: null
+    restart: "no"
+    volumes:
+      - type: bind
+        source: /root/nubla-siem/rabbitmq
+        target: /defs
+        read_only: true
+        bind:
+          create_host_path: true
+      - type: bind
+        source: /root/nubla-siem/scripts/rabbitmq
+        target: /scripts
+        read_only: true
+        bind:
+          create_host_path: true
+networks:
+  default:
+    name: nubla-siem_default
+volumes:
+  opensearch_data:
+    name: nubla-siem_opensearch_data
+  rabbitmq_data:
+    name: nubla-siem_rabbitmq_data

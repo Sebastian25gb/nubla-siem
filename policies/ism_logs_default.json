@@ -1,7 +1,7 @@
 {
   "policy": {
-    "policy_id": "logs-generic-policy",
-    "description": "Política genérica multi-tenant (dev) - rollover por edad y tamaño moderado",
+    "policy_id": "logs-default-retention",
+    "description": "Retención rápida para índice default (dev), rollover por edad/tamaño moderado y delete a 7d",
     "schema_version": 18,
     "default_state": "hot",
     "states": [
@@ -11,7 +11,7 @@
           {
             "rollover": {
               "min_index_age": "1d",
-              "min_size": "1gb"
+              "min_size": "512mb"
             }
           }
         ],
@@ -19,7 +19,7 @@
           {
             "state_name": "delete",
             "conditions": {
-              "min_index_age": "14d"
+              "min_index_age": "7d"
             }
           }
         ]
@@ -35,8 +35,8 @@
       }
     ],
     "ism_template": {
-      "index_patterns": ["logs-*-*"],
-      "priority": 10
+      "index_patterns": ["logs-default-*"],
+      "priority": 100
     }
   }
 }
