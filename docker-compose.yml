@@ -1,4 +1,19 @@
 services:
+  postgres:
+      image: postgres:15
+      environment:
+        POSTGRES_DB: ${POSTGRES_DB:-siem}
+        POSTGRES_USER: ${POSTGRES_USER:-siem}
+        POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-siempass}
+      ports:
+        - "127.0.0.1:5432:5432"
+      volumes:
+        - pg_data:/var/lib/postgresql/data
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-siem} -d ${POSTGRES_DB:-siem}"]
+        interval: 10s
+        timeout: 5s
+        retries: 10
   rabbitmq:
     image: rabbitmq:3-management
     ports:
@@ -91,7 +106,10 @@ services:
         dockerfile: backend/app/Dockerfile
       environment:
         - PYTHONPATH=/app
-        - OPENSEARCH_HOST=${OPENSEARCH_HOST:-opensearch:9200}
+        - OPENSEARCH_HOST=opensearch:9200
+        - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg2://siem:siempass@postgres:5432/siem}
+        - JWT_SECRET=${JWT_SECRET:-changeme-super-secret}
+        - JWT_ALG=${JWT_ALG:-HS256}
         - RABBITMQ_HOST=rabbitmq
         - RABBITMQ_USER=${RABBITMQ_USER:-admin}
         - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-securepass}
@@ -101,6 +119,8 @@ services:
         - TENANT_ID=${TENANT_ID:-default}
         - LOG_LEVEL=${LOG_LEVEL:-INFO}
       depends_on:
+        postgres:
+          condition: service_healthy
         opensearch:
           condition: service_healthy
         rabbitmq:
@@ -138,3 +158,4 @@ services:
 volumes:
   opensearch_data:
   rabbitmq_data:
+  pg_data:

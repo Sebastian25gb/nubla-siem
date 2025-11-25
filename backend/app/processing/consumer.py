@@ -286,6 +286,7 @@ def main() -> None:
                     return
 
             tenant = evt_dict.get("tenant_id") or "default"
+            evt_dict["tenant_id"] = tenant
             if not is_valid_tenant(tenant):
                 EVENTS_VALIDATION_FAILED.inc()
                 logger.warning(
