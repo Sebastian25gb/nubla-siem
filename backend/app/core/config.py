@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     # Compatibilidad temporal (código legado puede seguir leyendo elasticsearch_host)
     @property
     def elasticsearch_host(self) -> str:
+        # DEPRECATED: usar opensearch_host
         return self.opensearch_host
 
     # RabbitMQ

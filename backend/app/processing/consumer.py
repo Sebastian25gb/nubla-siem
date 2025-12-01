@@ -197,11 +197,8 @@ def main() -> None:
                     )
                     if host_val:
                         host_norm = str(host_val).strip().lower().replace(" ", "-")
-                        host_to_tenant = {
-                            "delawarehotel": "delawarehotel",
-                            "demo-host": "demo-host",
-                        }
-                        mapped = host_to_tenant.get(host_norm)
+                        from backend.app.processing.tenant_mapping import map_host_to_tenant
+                        mapped = map_host_to_tenant(host_norm)
                         default_tenant = getattr(settings, "tenant_id", "default")
                         if mapped and (existing_tenant in (None, "", default_tenant)):
                             normalized["tenant_id"] = mapped

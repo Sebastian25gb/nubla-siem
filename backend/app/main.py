@@ -10,6 +10,7 @@ from backend.app.api.routes.logs import router as logs_router
 # Nuevos
 from backend.app.api.routes.alias import router as alias_router
 from backend.app.api.routes.stats import router as stats_router
+from backend.app.api.routes.tenant_meta import router as tenant_meta_router
 
 app = FastAPI(title="Nubla SIEM API")
 configure_logging()
@@ -28,3 +29,4 @@ app.include_router(tenants_router)
 app.include_router(logs_router)
 app.include_router(alias_router)
 app.include_router(stats_router)
+app.include_router(tenant_meta_router)

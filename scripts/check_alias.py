@@ -15,10 +15,10 @@ def main():
         print(f"ALIAS_FETCH_ERROR status={r.status_code} body={r.text}")
         sys.exit(2)
     data = r.json()
-    write_indices = []
-    for idx, meta in data.items():
-        if meta.get("aliases", {}).get(ALIAS, {}).get("is_write_index") is True:
-            write_indices.append(idx)
+    write_indices = [
+        idx for idx, meta in data.items()
+        if meta.get("aliases", {}).get(ALIAS, {}).get("is_write_index") is True
+    ]
     if len(write_indices) != 1:
         print(f"ALIAS_WRITE_INDEX_INVALID alias={ALIAS} write_indices={write_indices}")
         sys.exit(1)

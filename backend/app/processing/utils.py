@@ -25,8 +25,10 @@ def prepare_event(evt: Dict[str, Any]) -> Dict[str, Any]:
     if "@timestamp" not in evt:
         evt["@timestamp"] = evt.get("timestamp", datetime.now(timezone.utc).isoformat())
     evt = coerce_datetimes(evt)
-    evt.setdefault("dataset", "syslog.generic")
-    evt.setdefault("schema_version", "1.0.0")
+    if "dataset" not in evt:
+        evt["dataset"] = "syslog.generic"
+    if "schema_version" not in evt:
+        evt["schema_version"] = "1.0.0"
     # Relleno por defecto del tenant (útil en modos single-tenant o tests).
     # En modo estricto, el consumer puede validar previamente y rechazar antes de llamar a prepare_event.
     try:
