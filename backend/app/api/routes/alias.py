@@ -5,7 +5,10 @@ from backend.app.services.alias_admin import get_alias_state
 router = APIRouter()
 
 @router.get("/alias/state")
-def alias_state(tenant: str = Query(...), user=Depends(get_current_user)):
+def alias_state(
+    tenant: str = Query(...),
+    user=Depends(get_current_user),
+):
     ensure_tenant_access(tenant, user)
     alias = f"logs-{tenant}"
     try:

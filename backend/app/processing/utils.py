@@ -25,12 +25,12 @@ def prepare_event(evt: Dict[str, Any]) -> Dict[str, Any]:
     if "@timestamp" not in evt:
         evt["@timestamp"] = evt.get("timestamp", datetime.now(timezone.utc).isoformat())
     evt = coerce_datetimes(evt)
+    # set dataset/schema only if missing (idempotent)
     if "dataset" not in evt:
         evt["dataset"] = "syslog.generic"
     if "schema_version" not in evt:
         evt["schema_version"] = "1.0.0"
     # Relleno por defecto del tenant (útil en modos single-tenant o tests).
-    # En modo estricto, el consumer puede validar previamente y rechazar antes de llamar a prepare_event.
     try:
         default_tenant = getattr(settings, "tenant_id", None)
     except Exception:
@@ -38,11 +38,3 @@ def prepare_event(evt: Dict[str, Any]) -> Dict[str, Any]:
     if "tenant_id" not in evt and default_tenant:
         evt["tenant_id"] = default_tenant
     return evt
-
-
-def top_validation_errors(errors, limit: int = 5) -> List[str]:
-    msgs: List[str] = []
-    for e in list(errors)[:limit]:
-        path = list(e.path) if getattr(e, "path", None) else []
-        msgs.append(f"{getattr(e,'message','validation error')} (path: {path})")
-    return msgs
