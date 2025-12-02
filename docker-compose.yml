@@ -148,6 +148,8 @@ services:
       - BULK_MAX_ITEMS=${BULK_MAX_ITEMS:-500}
       - BULK_MAX_INTERVAL_MS=${BULK_MAX_INTERVAL_MS:-1000}
       - CONSUMER_PREFETCH=${CONSUMER_PREFETCH:-5}
+      - REQUIRE_TENANT=false
+      - TENANTS_REGISTRY_PATH=config/tenants.json
     depends_on:
       opensearch:
         condition: service_healthy
