@@ -2,17 +2,8 @@
   "tenants": [
     {
       "id": "default",
-      "policy_id": "logs-default-retention",
-      "rollover_alias": "logs-default",
-      "active": true,
-      "retention_class": "silver"
-    },
-    {
-      "id": "delawarehotel",
-      "policy_id": "logs-delawarehotel-policy",
-      "rollover_alias": "logs-delawarehotel",
-      "active": true,
-      "retention_class": "gold"
+      "alias": "logs-default",
+      "policy_id": "logs-default-retention"
     }
   ]
 }
