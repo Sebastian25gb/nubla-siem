@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from backend.app.db.session import get_db
+
 from backend.app.db.models import Tenant
+from backend.app.db.session import get_db
 
 router = APIRouter()
+
 
 @router.get("/tenants")
 def list_tenants(db: Session = Depends(get_db)):

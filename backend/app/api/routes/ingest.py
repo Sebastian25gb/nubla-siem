@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
 from typing import Any, Dict, List
+
+from fastapi import APIRouter, Depends, HTTPException
+
 from backend.app.core.auth import get_current_user
 from backend.app.core.opensearch_client import get_client
 from backend.app.processing.utils import prepare_event
 
 router = APIRouter()
+
 
 @router.post("/logs/ingest")
 def ingest_events(payload: Dict[str, Any], user=Depends(get_current_user)):

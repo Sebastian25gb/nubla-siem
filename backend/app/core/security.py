@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 from jose import jwt
 from passlib.context import CryptContext
 
@@ -15,13 +16,16 @@ pwd_context = CryptContext(
     bcrypt__rounds=12,
 )
 
+
 def hash_password(password: str) -> str:
     # Bcrypt ya maneja límite de 72 bytes internamente con passlib; si quieres, puedes pre-truncar:
     # password = password[:72]
     return pwd_context.hash(password)
 
+
 def verify_password(password: str, password_hash: str) -> bool:
     return pwd_context.verify(password, password_hash)
+
 
 def create_access_token(subject: str, claims: Optional[Dict[str, Any]] = None) -> str:
     now = datetime.now(timezone.utc)

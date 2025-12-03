@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Path, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
+
+from backend.app.core.auth import ensure_tenant_access, get_current_user
 from backend.app.repository.elastic import get_es
-from backend.app.core.auth import get_current_user, ensure_tenant_access
 
 router = APIRouter()
+
 
 @router.get("/tenants/{tenant_id}/stats")
 def tenant_stats(tenant_id: str = Path(...), user=Depends(get_current_user)):

@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Depends, Query
+
+from backend.app.core.auth import ensure_tenant_access, get_current_user
 from backend.app.repository.elastic import get_es
-from backend.app.core.auth import get_current_user, ensure_tenant_access
 
 router = APIRouter()
+
 
 @router.get("/logs/search")
 def search_logs(

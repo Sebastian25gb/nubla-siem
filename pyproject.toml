@@ -1,3 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nubla-siem"
+version = "0.1.0"
+description = "Nubla SIEM"
+readme = "README.md"
+requires-python = ">=3.9"
+# Opcional: mueve dependencias de runtime aquí como una lista en [project.dependencies]
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+exclude = [
+  "config*", "infra*", "rabbitmq*", "policies*",
+  "templates*", "ingestion*", "docs*", "scripts*", "tests*"
+]
+
 [tool.black]
 line-length = 100
 target-version = ["py39"]

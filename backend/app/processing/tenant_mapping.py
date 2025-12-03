@@ -3,6 +3,7 @@ from pathlib import Path
 
 DEFAULT_MAP_PATH = Path("config/host_tenant_map.json")
 
+
 def load_mapping(path: Path = DEFAULT_MAP_PATH) -> dict:
     if not path.exists():
         return {}
@@ -14,7 +15,9 @@ def load_mapping(path: Path = DEFAULT_MAP_PATH) -> dict:
         return {}
     return {}
 
+
 HOST_TENANT_MAP = load_mapping()
+
 
 def map_host_to_tenant(host: str) -> str | None:
     if not host:

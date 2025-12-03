@@ -7,8 +7,10 @@ from backend.app.metrics.counters import INDEX_RETRIES
 
 logger = logging.getLogger(__name__)
 
+
 def get_es():
     return get_client()
+
 
 def index_event(
     es_client,

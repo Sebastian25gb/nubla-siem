@@ -1,0 +1,68 @@
+Metadata-Version: 2.4
+Name: nubla-siem
+Version: 0.1.0
+Summary: Nubla SIEM
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+
+# Nubla SIEM
+
+Nubla es un SIEM multi-tenant orientado a alto rendimiento y extensibilidad, con IA para detección, consultas en lenguaje natural y automatización (SOAR-lite). La arquitectura objetivo prioriza seguridad, escalabilidad, compatibilidad (estándares) y modularidad.
+
+## Arquitectura (visión rápida)
+- Ingesta: agentes (Vector) → Redpanda (API Kafka) con Schema Registry.
+- Procesamiento: validación de esquema (NCS/ECS), normalización y enriquecimiento.
+- Almacenamiento: OpenSearch (índices/data streams por tenant) con ISM (hot/warm/cold).
+- Multitenencia: aislamiento por índice y RBAC; filtros forzados en backend.
+- IA y reglas: Sigma → DSL/stream y anomalías (progresivo).
+- Automatización: playbooks con aprobaciones y auditoría.
+
+Detalles completos en la carpeta [docs/](./docs).
+
+## Estado del proyecto
+- Documentación de arquitectura y operación en `docs/`.
+- Pipeline de referencia inicial (antes del “all-in”): Fluentd → RabbitMQ → Backend → Elasticsearch.
+- Próximo objetivo: “all-in” Redpanda + OpenSearch + Vector + NCS.
+
+## Empezar (documentación)
+- Lee primero:
+  - [docs/strategy/vision_scope.md](./docs/strategy/vision_scope.md)
+  - [docs/architecture/technical_choices.md](./docs/architecture/technical_choices.md)
+  - [docs/architecture/storage_design.md](./docs/architecture/storage_design.md)
+  - [docs/architecture/multitenancy_design.md](./docs/architecture/multitenancy_design.md)
+  - [docs/work_plan.md](./docs/work_plan.md)
+  - [docs/roadmap.md](./docs/roadmap.md)
+
+## Variables de entorno
+- Diferencia:
+  - `.env.example`: plantilla versionada con todas las variables requeridas y valores ficticios/seguros.
+  - `.env`: tus valores reales (secretos, URLs). No se versiona (está en `.gitignore`).
+- Uso:
+  1. Copia `.env.example` a `.env`.
+  2. Rellena los valores reales para tu entorno.
+  3. Los servicios (compose, backend, etc.) leerán de `.env`.
+
+## Estructura del repositorio (alto nivel)
+- `backend/` — API y servicios de procesamiento.
+- `ingestion/` — configuración de ingesta (p. ej., agentes/config).
+- `docs/` — documentación de arquitectura, operación, ADRs y roadmap.
+
+## Roadmap resumido (sin fechas)
+1. Plataforma base: Redpanda + Schema Registry; OpenSearch + Security/OIDC; Vector; NCS v1.
+2. Multitenencia estricta: índices por tenant, RBAC, cuotas.
+3. Normalización y DLQ: NCS + enriquecimiento + tooling de inspección/replay.
+4. Reglas (Sigma): traducción a DSL/stream y UI/CRUD por tenant.
+5. Anomalías v1: detecciones no supervisadas per-tenant.
+6. NLP (alpha): NL → AST → DSL con guardrails.
+7. SOAR-lite: playbooks con aprobaciones y conectores clave.
+
+## Contribución
+- Crea una rama para cada épica/feature.
+- Abre PRs con descripción clara, referencias a docs/ y criterios de aceptación.
+- Mantén `.env` fuera del control de versiones; actualiza `.env.example` si agregas variables nuevas.
+
+## Licencia
+Pendiente de definir.
+
+## Contacto
+nublas — issues y PRs en este repositorio.

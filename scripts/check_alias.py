@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import os
 import sys
+
 import requests
 
 OS_HOST = os.getenv("OPENSEARCH_HOST", "http://localhost:9201")
@@ -9,6 +10,7 @@ OS_PASS = os.getenv("OS_PASS", "admin")
 
 ALIAS = os.getenv("CHECK_ALIAS", "logs-default")
 
+
 def main():
     r = requests.get(f"{OS_HOST}/_alias/{ALIAS}", auth=(OS_USER, OS_PASS))
     if r.status_code != 200:
@@ -16,7 +18,8 @@ def main():
         sys.exit(2)
     data = r.json()
     write_indices = [
-        idx for idx, meta in data.items()
+        idx
+        for idx, meta in data.items()
         if meta.get("aliases", {}).get(ALIAS, {}).get("is_write_index") is True
     ]
     if len(write_indices) != 1:
@@ -24,6 +27,7 @@ def main():
         sys.exit(1)
     print(f"ALIAS_WRITE_INDEX_OK alias={ALIAS} write_index={write_indices[0]}")
     sys.exit(0)
+
 
 if __name__ == "__main__":
     main()

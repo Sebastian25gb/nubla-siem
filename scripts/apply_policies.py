@@ -1,11 +1,12 @@
 #!/usr/bin/env python
+import hashlib
 import json
 import logging
 import os
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 import requests
-import hashlib
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOG = logging.getLogger("apply_policies")
@@ -61,7 +62,7 @@ def get_existing_policy(policy_id: str):
     return {
         "seq_no": data.get("_seq_no"),
         "primary_term": data.get("_primary_term"),
-        "policy": data.get("policy")
+        "policy": data.get("policy"),
     }
 
 
@@ -87,7 +88,9 @@ def upsert_policy(policy_path: Path):
         url = f"{OS_HOST}/_plugins/_ism/policies/{policy_id}?if_seq_no={seq}&if_primary_term={pt}"
         r = requests.put(url, auth=(OS_USER, OS_PASS), json=data)
         if r.status_code not in (200, 201):
-            LOG.error("policy_update_failed id=%s status=%s body=%s", policy_id, r.status_code, r.text)
+            LOG.error(
+                "policy_update_failed id=%s status=%s body=%s", policy_id, r.status_code, r.text
+            )
         else:
             LOG.info("policy_updated id=%s", policy_id)
     else:
@@ -95,7 +98,9 @@ def upsert_policy(policy_path: Path):
         url = f"{OS_HOST}/_plugins/_ism/policies/{policy_id}"
         r = requests.put(url, auth=(OS_USER, OS_PASS), json=data)
         if r.status_code not in (200, 201):
-            LOG.error("policy_create_failed id=%s status=%s body=%s", policy_id, r.status_code, r.text)
+            LOG.error(
+                "policy_create_failed id=%s status=%s body=%s", policy_id, r.status_code, r.text
+            )
         else:
             LOG.info("policy_created id=%s", policy_id)
 
@@ -117,17 +122,18 @@ def ensure_index_and_alias(tenant: Dict[str, Any]):
                     "number_of_shards": 1,
                     "number_of_replicas": 0,
                     "opendistro": {
-                        "index_state_management": {
-                            "rollover_alias": alias,
-                            "policy_id": policy_id
-                        }
-                    }
+                        "index_state_management": {"rollover_alias": alias, "policy_id": policy_id}
+                    },
                 }
-            }
+            },
         )
         if r_create.status_code not in (200, 201):
-            LOG.error("index_create_failed tenant=%s status=%s body=%s",
-                      tid, r_create.status_code, r_create.text)
+            LOG.error(
+                "index_create_failed tenant=%s status=%s body=%s",
+                tid,
+                r_create.status_code,
+                r_create.text,
+            )
             return
         LOG.info("index_created tenant=%s index=%s", tid, index_initial)
     else:
@@ -137,15 +143,15 @@ def ensure_index_and_alias(tenant: Dict[str, Any]):
         r_set = requests.put(
             f"{OS_HOST}/{index_initial}/_settings",
             auth=(OS_USER, OS_PASS),
-            json={
-                "index": {
-                    "opendistro.index_state_management.rollover_alias": alias
-                }
-            }
+            json={"index": {"opendistro.index_state_management.rollover_alias": alias}},
         )
         if r_set.status_code not in (200, 201):
-            LOG.warning("rollover_alias_set_failed tenant=%s status=%s body=%s",
-                        tid, r_set.status_code, r_set.text)
+            LOG.warning(
+                "rollover_alias_set_failed tenant=%s status=%s body=%s",
+                tid,
+                r_set.status_code,
+                r_set.text,
+            )
         else:
             LOG.info("rollover_alias_ok tenant=%s alias=%s", tid, alias)
 
@@ -153,13 +159,17 @@ def ensure_index_and_alias(tenant: Dict[str, Any]):
     r_alias = requests.post(
         f"{OS_HOST}/_aliases",
         auth=(OS_USER, OS_PASS),
-        json={"actions": [
-            {"add": {"index": index_initial, "alias": alias, "is_write_index": True}}
-        ]}
+        json={
+            "actions": [{"add": {"index": index_initial, "alias": alias, "is_write_index": True}}]
+        },
     )
     if r_alias.status_code not in (200, 201):
-        LOG.warning("alias_add_failed_or_exists tenant=%s status=%s body=%s",
-                    tid, r_alias.status_code, r_alias.text)
+        LOG.warning(
+            "alias_add_failed_or_exists tenant=%s status=%s body=%s",
+            tid,
+            r_alias.status_code,
+            r_alias.text,
+        )
     else:
         LOG.info("alias_write_ok tenant=%s alias=%s", tid, alias)
 
@@ -167,11 +177,16 @@ def ensure_index_and_alias(tenant: Dict[str, Any]):
     r_add = requests.post(
         f"{OS_HOST}/_plugins/_ism/add/{index_initial}",
         auth=(OS_USER, OS_PASS),
-        json={"policy_id": policy_id}
+        json={"policy_id": policy_id},
     )
     if r_add.status_code not in (200, 201):
-        LOG.warning("policy_attach_failed tenant=%s policy_id=%s status=%s body=%s",
-                    tid, policy_id, r_add.status_code, r_add.text)
+        LOG.warning(
+            "policy_attach_failed tenant=%s policy_id=%s status=%s body=%s",
+            tid,
+            policy_id,
+            r_add.status_code,
+            r_add.text,
+        )
     else:
         LOG.info("policy_attach_ok tenant=%s policy_id=%s", tid, policy_id)
 

@@ -16,4 +16,9 @@ node_modules/
 .idea/
 
 # Docker
-*.log
+*.log.venv
+.archive
+.cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

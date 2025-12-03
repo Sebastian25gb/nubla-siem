@@ -198,6 +198,7 @@ def main() -> None:
                     if host_val:
                         host_norm = str(host_val).strip().lower().replace(" ", "-")
                         from backend.app.processing.tenant_mapping import map_host_to_tenant
+
                         mapped = map_host_to_tenant(host_norm)
                         default_tenant = getattr(settings, "tenant_id", "default")
                         if mapped and (existing_tenant in (None, "", default_tenant)):
