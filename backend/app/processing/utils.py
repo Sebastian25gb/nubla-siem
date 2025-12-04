@@ -38,3 +38,18 @@ def prepare_event(evt: Dict[str, Any]) -> Dict[str, Any]:
     if "tenant_id" not in evt and default_tenant:
         evt["tenant_id"] = default_tenant
     return evt
+
+
+def top_validation_errors(errors, limit: int = 5):
+    out = []
+    try:
+        for e in list(errors)[:limit]:
+            try:
+                path = ".".join(str(p) for p in getattr(e, "path", []) or []) or "<root>"
+            except Exception:
+                path = "<root>"
+            msg = getattr(e, "message", str(e))
+            out.append(f"{path}: {msg}")
+    except Exception:
+        pass
+    return out

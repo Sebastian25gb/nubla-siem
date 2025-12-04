@@ -1,9 +1,3 @@
 {
-  "tenants": [
-    {
-      "id": "default",
-      "alias": "logs-default",
-      "policy_id": "logs-default-retention"
-    }
-  ]
+  "tenants": ["default"]
 }
