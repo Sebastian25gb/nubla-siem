@@ -1,14 +1,13 @@
 FROM fluent/fluentd:v1.16-debian
-
 USER root
-# Instalar plugin de RabbitMQ para salida
-RUN gem install fluent-plugin-rabbitmq --no-document
 
-# Copiar configuración
+# Plugins necesarios para salida a RabbitMQ y parseo simple
+RUN gem install --no-document fluent-plugin-rabbitmq fluent-plugin-parser
+
+# Copia de configuración
 COPY fluent.conf /fluentd/etc/fluent.conf
 
-# Permisos y usuario no root
-RUN chown -R fluent:fluent /fluentd
-USER fluent
+# Puerto de entrada (UDP 24224 según docker-compose)
+EXPOSE 24224 24224/udp
 
-# Comando por defecto (del base image)
+USER fluent
